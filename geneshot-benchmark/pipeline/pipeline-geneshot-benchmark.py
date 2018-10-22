@@ -35,7 +35,7 @@ r.source('pipeline/scripts/geneshot-benchmark.R')
 
 #######################################################
 #######################################################
-########## S1. Process Data
+########## S1. RIF Processing
 #######################################################
 #######################################################
 
@@ -105,7 +105,56 @@ def getNetworks(infile, outfile):
 
 #######################################################
 #######################################################
-########## S. 
+########## S2. Enrichr Processing
+#######################################################
+#######################################################
+
+#############################################
+########## 1. Normalize
+#############################################
+
+@follows(mkdir('s3-enrichr.dir'))
+
+@transform('s1-feather.dir/list_off_co.feather',
+           regex(r'.*/(.*).feather'),
+           r's3-enrichr.dir/\1-fraction.txt')
+
+def normalizeEnrichr(infile, outfile):
+
+    # Read data
+    enrichr_dataframe = pd.read_feather(infile).set_index('gene_symbol')#.iloc[:500,:500]
+
+    # Get gene counts
+    gene_counts = enrichr_dataframe.max()
+
+    # Find gene indices
+    genes_idx = list(np.where(gene_counts > 50)[0])
+
+    # Filter genes
+    filtered_enrichr_dataframe = enrichr_dataframe.iloc[genes_idx, genes_idx]
+
+    # Apply fraction
+    filtered_enrichr_dataframe = filtered_enrichr_dataframe.apply(lambda x: x/max(x))
+
+    # Remove diagonal
+    np.fill_diagonal(filtered_enrichr_dataframe.values, np.nan)
+
+    # Get edges
+    edge_dataframe = pd.melt(filtered_enrichr_dataframe.reset_index(), id_vars='gene_symbol').dropna()
+
+    # Get pairs
+    edge_dataframe['pair'] = [str(set([rowData['gene_symbol'], rowData['variable']])) for index, rowData in edge_dataframe.iterrows()]
+
+    # Drop duplicates
+    edge_dataframe = edge_dataframe.drop_duplicates('pair').drop('pair', axis=1).reset_index().drop('index', axis=1)
+
+    # Save
+    edge_dataframe.to_csv(outfile, sep='\t', index=False)
+    # edge_dataframe.to_feather(outfile)#, sep='\t', index=False)
+
+#######################################################
+#######################################################
+########## S3. ROC
 #######################################################
 #######################################################
 
