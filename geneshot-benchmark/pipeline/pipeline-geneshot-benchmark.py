@@ -12,9 +12,11 @@
 #############################################
 ##### 1. Python modules #####
 from ruffus import *
-import sys, glob
+from ruffus.combinatorics import *
+import sys, glob, os
 import numpy as np
 import pandas as pd
+from multiprocessing.pool import ThreadPool
 from rpy2.robjects import r, pandas2ri
 pandas2ri.activate()
 
@@ -32,6 +34,16 @@ import GeneshotBenchmark as P
 
 ##### 2. R Connection #####
 r.source('pipeline/scripts/geneshot-benchmark.R')
+
+##### 3. Functions #####
+# Read GMT file
+def readGMT(infile):
+    gmt = {}
+    with open(infile) as openfile:
+        for line in openfile.read().split('\n'):
+            split_line = line.strip().split('\t')
+            gmt[split_line[0]] = split_line[2:]
+    return gmt
 
 #######################################################
 #######################################################
@@ -105,63 +117,95 @@ def getNetworks(infile, outfile):
 
 #######################################################
 #######################################################
-########## S2. Enrichr Processing
+########## S2. Prepare Data
 #######################################################
 #######################################################
 
 #############################################
-########## 1. Normalize
+########## 1. Fraction
 #############################################
 
-@follows(mkdir('s3-enrichr.dir'))
+@follows(mkdir('s3-normalized.dir'))
 
 @transform('s1-feather.dir/list_off_co.feather',
            regex(r'.*/(.*).feather'),
-           r's3-enrichr.dir/\1-fraction.txt')
+           r's3-normalized.dir/\1-fraction.feather')
 
-def normalizeEnrichr(infile, outfile):
+def normalizeFraction(infile, outfile):
 
     # Read data
-    enrichr_dataframe = pd.read_feather(infile).set_index('gene_symbol')#.iloc[:500,:500]
-
-    # Get gene counts
-    gene_counts = enrichr_dataframe.max()
-
-    # Find gene indices
-    genes_idx = list(np.where(gene_counts > 50)[0])
-
-    # Filter genes
-    filtered_enrichr_dataframe = enrichr_dataframe.iloc[genes_idx, genes_idx]
+    enrichr_dataframe = pd.read_feather(infile).set_index('gene_symbol')
 
     # Apply fraction
-    filtered_enrichr_dataframe = filtered_enrichr_dataframe.apply(lambda x: x/max(x))
-
-    # Remove diagonal
-    np.fill_diagonal(filtered_enrichr_dataframe.values, np.nan)
-
-    # Get edges
-    edge_dataframe = pd.melt(filtered_enrichr_dataframe.reset_index(), id_vars='gene_symbol').dropna()
-
-    # Get pairs
-    edge_dataframe['pair'] = [str(set([rowData['gene_symbol'], rowData['variable']])) for index, rowData in edge_dataframe.iterrows()]
-
-    # Drop duplicates
-    edge_dataframe = edge_dataframe.drop_duplicates('pair').drop('pair', axis=1).reset_index().drop('index', axis=1)
+    enrichr_dataframe = enrichr_dataframe.apply(lambda x: x/max(x)).reset_index()
 
     # Save
-    edge_dataframe.to_csv(outfile, sep='\t', index=False)
-    # edge_dataframe.to_feather(outfile)#, sep='\t', index=False)
-
-#######################################################
-#######################################################
-########## S3. ROC
-#######################################################
-#######################################################
+    enrichr_dataframe.to_feather(outfile)
 
 #############################################
-########## . 
+########## 2. Binarize genesets
 #############################################
 
+@follows(mkdir('s4-libraries_binary.dir'))
+
+@transform(glob.glob('libraries.dir/*'),
+           regex(r'.*/(.*).txt'),
+           add_inputs('s1-feather.dir/list_off_co.feather'),
+           r's4-libraries_binary.dir/\1-binary.feather')
+
+def binarizeGenesets(infiles, outfile):
+
+    # Read GMT
+    gmt = readGMT(infiles[0])
+
+    # Read score dataframe
+    score_dataframe = pd.read_feather(infiles[1]).set_index('gene_symbol')
+
+    # Process gmt
+    gene_dataframe = pd.DataFrame([{'geneset': geneset, 'gene_symbol': gene, 'value': 1} for geneset, genes in gmt.items() for gene in genes])
+
+    # Pivot
+    binary_dataframe = gene_dataframe.pivot_table(index='gene_symbol', columns='geneset', values='value', fill_value=0)
+
+    # Add other genes
+    binary_dataframe = binary_dataframe.reindex(score_dataframe.index, fill_value=0).reset_index()
+    
+    # Write
+    binary_dataframe.to_feather(outfile)
+
+#############################################
+########## 1. Get ranks
+#############################################
+
+@follows(mkdir('s5-ranks.dir'))
+
+@product(normalizeFraction,
+         formatter(r'.*/.*-(.*).feather'),
+         binarizeGenesets,
+         formatter(r'.*/(.*)-binary.feather'),
+         's5-ranks.dir/{1[0][0]}-{1[1][0]}.feather')
+
+def getRanks(infiles, outfile):
+
+    # Get scores
+    score_dataframe = pd.read_feather(infiles[0]).set_index('gene_symbol')
+
+    # Get binary dataframe
+    binary_dataframe = pd.read_feather(infiles[1]).set_index('gene_symbol').T
+
+    # Initialize dict
+    average_score = {x: {} for x in binary_dataframe.index}
+
+    # Loop through libraries
+    for library, genes_binary in binary_dataframe.iterrows():
+        for gene_symbol, gene_score in score_dataframe.iterrows():
+            average_score[library][gene_symbol] = genes_binary.mul(gene_score).replace(0, np.nan).dropna().mean()
+
+    # Get average score
+    average_score_dataframe = pd.DataFrame(average_score).reset_index()
+
+    # Write
+    average_score_dataframe.to_feather(outfile)
 
 ##################################################
 ##################################################
