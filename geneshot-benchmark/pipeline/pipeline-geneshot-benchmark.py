@@ -17,6 +17,7 @@ import sys, glob, os
 import numpy as np
 import pandas as pd
 from multiprocessing.pool import ThreadPool
+from sklearn.metrics import roc_auc_score
 from rpy2.robjects import r, pandas2ri
 pandas2ri.activate()
 
@@ -42,82 +43,12 @@ def readGMT(infile):
     with open(infile) as openfile:
         for line in openfile.read().split('\n'):
             split_line = line.strip().split('\t')
-            gmt[split_line[0]] = split_line[2:]
+            gmt[split_line[0]] = [x.split(',')[0] for x in split_line[2:]]
     return gmt
 
 #######################################################
 #######################################################
-########## S1. RIF Processing
-#######################################################
-#######################################################
-
-#############################################
-########## 1. Convert to feather
-#############################################
-
-@follows(mkdir('s1-feather.dir'))
-
-@transform(glob.glob('rawdata.dir/*.tsv'),
-           regex(r'.*/(.*).tsv'),
-           r's1-feather.dir/\1.feather')
-
-def toFeather(infile, outfile):
-
-    # Read data
-    print('Doing {}...'.format(infile))
-    data = pd.read_table(infile)
-
-    # Fix dataframe
-    if 'autorif' in infile or 'list' in infile:
-        data = data.rename(columns={'Unnamed: 0': 'gene_symbol'})
-    elif 'generif' in infile:
-        data.columns = data.columns[1:].tolist()+['empty']
-        data = data.drop('empty', axis=1).rename_axis('gene_symbol').reset_index()
-
-    # Write 
-    data.to_feather(outfile)
-
-#############################################
-########## 2. Get network edges
-#############################################
-
-
-@follows(mkdir('s2-networks.dir'))
-
-@transform(glob.glob('s1-feather.dir/*_overlap.feather'),
-           regex(r'.*/(.*).feather'),
-           r's2-networks.dir/\1-edges.txt')
-
-def getNetworks(infile, outfile):
-
-    # Print
-    print('Doing {}...'.format(outfile))
-
-    # Read dataframe
-    rif_dataframe = pd.read_feather(infile).set_index('gene_symbol')
-
-    # Get nodes
-    count_dataframe = pd.Series(index=rif_dataframe.index, data=np.diag(rif_dataframe), name='total_publications').to_frame()
-
-    # Fill diagonal
-    np.fill_diagonal(rif_dataframe.values, 0)
-
-    # Filter edges
-    edge_dataframe = pd.melt(rif_dataframe.reset_index(), id_vars='gene_symbol').rename(columns={'gene_symbol': 'source', 'variable': 'target', 'value': 'publications'}).query('publications > 15')
-
-    # Get pairs
-    edge_dataframe['pair'] = [str(set([rowData['source'], rowData['target']])) for index, rowData in edge_dataframe.iterrows()]
-
-    # Drop duplicates
-    edge_dataframe = edge_dataframe.drop_duplicates('pair').drop('pair', axis=1)
-
-    # Write
-    edge_dataframe.to_csv(outfile, sep='\t', index=False)
-    count_dataframe.to_csv(outfile.replace('edges', 'nodes'), sep='\t')
-
-#######################################################
-#######################################################
-########## S2. Prepare Data
+########## S1. Prepare Data
 #######################################################
 #######################################################
 
@@ -125,19 +56,25 @@ def getNetworks(infile, outfile):
 ########## 1. Fraction
 #############################################
 
-@follows(mkdir('s3-normalized.dir'))
+def normalizeJobs():
+    for method in ['fraction']:
+        yield ['feather.dir/list_off_co.feather', 's1-normalized.dir/{}.feather'.format(method)]
 
-@transform('s1-feather.dir/list_off_co.feather',
-           regex(r'.*/(.*).feather'),
-           r's3-normalized.dir/\1-fraction.feather')
+@follows(mkdir('s1-normalized.dir'))
 
-def normalizeFraction(infile, outfile):
+@files(normalizeJobs)
+
+def normalizeCounts(infile, outfile):
 
     # Read data
     enrichr_dataframe = pd.read_feather(infile).set_index('gene_symbol')
 
-    # Apply fraction
-    enrichr_dataframe = enrichr_dataframe.apply(lambda x: x/max(x)).reset_index()
+    # Get method
+    method = os.path.basename(outfile).split('.')[0]
+
+    # Normalize
+    if method == 'fraction':
+        enrichr_dataframe = enrichr_dataframe.apply(lambda x: x/max(x)).reset_index()
 
     # Save
     enrichr_dataframe.to_feather(outfile)
@@ -146,12 +83,12 @@ def normalizeFraction(infile, outfile):
 ########## 2. Binarize genesets
 #############################################
 
-@follows(mkdir('s4-libraries_binary.dir'))
+@follows(mkdir('s2-libraries_binary.dir'))
 
 @transform(glob.glob('libraries.dir/*'),
            regex(r'.*/(.*).txt'),
-           add_inputs('s1-feather.dir/list_off_co.feather'),
-           r's4-libraries_binary.dir/\1-binary.feather')
+           add_inputs('feather.dir/list_off_co.feather'),
+           r's2-libraries_binary.dir/\1-binary.feather')
 
 def binarizeGenesets(infiles, outfile):
 
@@ -174,43 +111,107 @@ def binarizeGenesets(infiles, outfile):
     binary_dataframe.to_feather(outfile)
 
 #############################################
-########## 1. Get ranks
+########## 3. Get average scores
 #############################################
 
-@follows(mkdir('s5-ranks.dir'))
+@follows(mkdir('s3-average_scores.dir'))
 
-@product(normalizeFraction,
-         formatter(r'.*/.*-(.*).feather'),
+@product(normalizeCounts,
+         formatter(r'.*/(.*).feather'),
          binarizeGenesets,
          formatter(r'.*/(.*)-binary.feather'),
-         's5-ranks.dir/{1[0][0]}-{1[1][0]}.feather')
+         's3-average_scores.dir/{1[0][0]}-{1[1][0]}.feather')
 
-def getRanks(infiles, outfile):
+def getAverageScores(infiles, outfile):
 
     # Get scores
     score_dataframe = pd.read_feather(infiles[0]).set_index('gene_symbol')
 
     # Get binary dataframe
-    binary_dataframe = pd.read_feather(infiles[1]).set_index('gene_symbol').T
+    binary_dataframe = pd.read_feather(infiles[1]).set_index('gene_symbol')
 
-    # Initialize dict
-    average_score = {x: {} for x in binary_dataframe.index}
-
-    # Loop through libraries
-    for library, genes_binary in binary_dataframe.iterrows():
-        for gene_symbol, gene_score in score_dataframe.iterrows():
-            average_score[library][gene_symbol] = genes_binary.mul(gene_score).replace(0, np.nan).dropna().mean()
-
-    # Get average score
-    average_score_dataframe = pd.DataFrame(average_score).reset_index()
+    # Matrix product
+    product_dataframe = (score_dataframe.dot(binary_dataframe)/binary_dataframe.sum()).reset_index()
 
     # Write
-    average_score_dataframe.to_feather(outfile)
+    product_dataframe.to_feather(outfile)
+
+#############################################
+########## 4. Get AUC scores
+#############################################
+
+@follows(mkdir('s4-auc_scores.dir'))
+
+@transform(getAverageScores,
+           regex(r'.*/(.*)-(.*).feather'),
+           add_inputs(r's2-libraries_binary.dir/\2-binary.feather'),
+           r's4-auc_scores.dir/\1-\2-scores.txt')
+
+def getAucScores(infiles, outfile):
+
+    # Get average
+    average_score_dataframe = pd.read_feather(infiles[0]).set_index('gene_symbol')
+
+    # Get binary dataframe
+    binary_dataframe = pd.read_feather(infiles[1]).set_index('gene_symbol')
+
+    # Initialize dictionary
+    auc = {}
+
+    # Loop through genes
+    for index, gene_symbol in enumerate(binary_dataframe.index):
+        
+        # Get AUC
+        binary = binary_dataframe.iloc[index]
+        if any(binary):
+            auc[gene_symbol] = roc_auc_score(binary, average_score_dataframe.iloc[index])
+        else:
+            auc[gene_symbol] = np.nan
+            
+    # Merge
+    auc_dataframe = pd.Series(auc, name='auc').to_frame().rename_axis('gene_symbol')
+
+    # Write
+    auc_dataframe.to_csv(outfile, sep='\t')
+
+#############################################
+########## 5. Merge AUC scores
+#############################################
+
+@follows(mkdir('s5-merged_auc.dir'))
+
+@merge(getAucScores,
+       's5-merged_auc.dir/merged_auc.txt')
+
+def mergeAucScores(infiles, outfile):
+
+    # Initialize result
+    result_dataframe = pd.DataFrame()
+
+    # Loop through infiles
+    for infile in infiles:
+        
+        # Get metadata
+        normalization, library, scores = os.path.basename(infile).split('-')
+        
+        # Read AUC
+        auc_dataframe = pd.read_table(infile)
+        
+        # Add metadata
+        auc_dataframe['normalization'] = normalization
+        auc_dataframe['library'] = library
+        
+        # Append
+        result_dataframe = result_dataframe.append(auc_dataframe)
+        
+    # Write
+    result_dataframe.to_csv(outfile, sep='\t', index=False)
+
 
 ##################################################
 ##################################################
 ########## Run pipeline
 ##################################################
 ##################################################
-pipeline_run([sys.argv[-1]], multiprocess=3, verbose=1)
+pipeline_run([sys.argv[-1]], multiprocess=5, verbose=1)
 print('Done!')
