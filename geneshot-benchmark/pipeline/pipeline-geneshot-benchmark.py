@@ -16,6 +16,9 @@ from ruffus.combinatorics import *
 import sys, glob, os
 import numpy as np
 import pandas as pd
+import scipy.stats as ss
+import seaborn as sns
+import matplotlib.pyplot as plt
 from multiprocessing.pool import ThreadPool
 from sklearn.metrics import roc_auc_score
 from rpy2.robjects import r, pandas2ri
@@ -57,7 +60,7 @@ def readGMT(infile):
 #############################################
 
 def normalizeJobs():
-    for method in ['fraction']:
+    for method in ['fraction', 'zscore']: #'raw'
         yield ['feather.dir/list_off_co.feather', 's1-normalized.dir/{}.feather'.format(method)]
 
 @follows(mkdir('s1-normalized.dir'))
@@ -74,10 +77,14 @@ def normalizeCounts(infile, outfile):
 
     # Normalize
     if method == 'fraction':
-        enrichr_dataframe = enrichr_dataframe.apply(lambda x: x/max(x)).reset_index()
+        enrichr_dataframe = enrichr_dataframe.apply(lambda x: x/max(x))
+    if method == 'raw':
+        enrichr_dataframe = enrichr_dataframe
+    if method == 'zscore':
+        enrichr_dataframe = enrichr_dataframe.apply(ss.zscore)
 
     # Save
-    enrichr_dataframe.to_feather(outfile)
+    enrichr_dataframe.reset_index().to_feather(outfile)
 
 #############################################
 ########## 2. Binarize genesets
@@ -124,6 +131,9 @@ def binarizeGenesets(infiles, outfile):
 
 def getAverageScores(infiles, outfile):
 
+    # Print
+    print('Doing {}...'.format(outfile))
+
     # Get scores
     score_dataframe = pd.read_feather(infiles[0]).set_index('gene_symbol')
 
@@ -150,7 +160,7 @@ def getAverageScores(infiles, outfile):
 def getAucScores(infiles, outfile):
 
     # Get average
-    average_score_dataframe = pd.read_feather(infiles[0]).set_index('gene_symbol')
+    average_score_dataframe = pd.read_feather(infiles[0]).set_index('gene_symbol').apply(ss.zscore)
 
     # Get binary dataframe
     binary_dataframe = pd.read_feather(infiles[1]).set_index('gene_symbol')
@@ -207,11 +217,38 @@ def mergeAucScores(infiles, outfile):
     # Write
     result_dataframe.to_csv(outfile, sep='\t', index=False)
 
+#############################################
+########## 6. Plot AUC scores
+#############################################
+
+@follows(mkdir('s6-auc_plots.dir'))
+
+@transform(mergeAucScores,
+           regex(r'.*/(.*).txt'),
+           r's6-auc_plots.dir/\1.pdf')
+
+def plotAucScores(infile, outfile):
+
+    # Read data
+    auc_dataframe = pd.read_table(infile)
+
+    # Set style
+    # sns.set_style('ticks')
+    # fig, ax = plt.subplots()
+    # fig.set_size_inches(11.7, 8.27)
+    sns.set_context("paper")
+
+    # Plot
+    g = sns.FacetGrid(auc_dataframe, col='library', hue='normalization')
+    g = (g.map(sns.distplot, 'auc').add_legend())
+
+    # Save figure
+    g.savefig(outfile)
 
 ##################################################
 ##################################################
 ########## Run pipeline
 ##################################################
 ##################################################
-pipeline_run([sys.argv[-1]], multiprocess=5, verbose=1)
+pipeline_run([sys.argv[-1]], multiprocess=1, verbose=1)
 print('Done!')
