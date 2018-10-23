@@ -121,9 +121,9 @@ def binarizeGenesets(infiles, outfile):
 ########## 3. Get average scores
 #############################################
 
-@follows(mkdir('s3-average_scores.dir'))
+@follows(mkdir('s3-average_scores.dir'), normalizeCounts)
 
-@product(normalizeCounts,
+@product(glob.glob('s1-normalized.dir/*.feather'),
          formatter(r'.*/(.*).feather'),
          binarizeGenesets,
          formatter(r'.*/(.*)-binary.feather'),
@@ -137,8 +137,15 @@ def getAverageScores(infiles, outfile):
     # Get scores
     score_dataframe = pd.read_feather(infiles[0]).set_index('gene_symbol')
 
+    # Fill diagonal
+    np.fill_diagonal(score_dataframe.values, 0)
+
     # Get binary dataframe
     binary_dataframe = pd.read_feather(infiles[1]).set_index('gene_symbol')
+
+    # Reindex
+    if 'correlation' in outfile:
+        binary_dataframe = binary_dataframe.reindex(score_dataframe.index, fill_value=0)
 
     # Matrix product
     product_dataframe = (score_dataframe.dot(binary_dataframe)/binary_dataframe.sum()).reset_index()
@@ -160,13 +167,17 @@ def getAverageScores(infiles, outfile):
 def getAucScores(infiles, outfile):
 
     # Get average
-    average_score_dataframe = pd.read_feather(infiles[0]).set_index('gene_symbol').apply(ss.zscore)
+    average_score_dataframe = pd.read_feather(infiles[0]).set_index('gene_symbol').fillna(0)
 
     # Get binary dataframe
     binary_dataframe = pd.read_feather(infiles[1]).set_index('gene_symbol')
 
     # Initialize dictionary
     auc = {}
+
+    # Reindex
+    if 'correlation' in outfile:
+        binary_dataframe = binary_dataframe.reindex(average_score_dataframe.index, fill_value=0)
 
     # Loop through genes
     for index, gene_symbol in enumerate(binary_dataframe.index):
@@ -229,21 +240,24 @@ def mergeAucScores(infiles, outfile):
 
 def plotAucScores(infile, outfile):
 
-    # Read data
-    auc_dataframe = pd.read_table(infile)
+    # Plot
+    r.plot_auc(infile, outfile)
 
-    # Set style
-    # sns.set_style('ticks')
+    # # Read data
+    # auc_dataframe = pd.read_table(infile)
+
+    # # Set style
+    # # sns.set_style('ticks')
     # fig, ax = plt.subplots()
     # fig.set_size_inches(11.7, 8.27)
-    sns.set_context("paper")
+    # sns.set_context("paper")
 
-    # Plot
-    g = sns.FacetGrid(auc_dataframe, col='library', hue='normalization')
-    g = (g.map(sns.distplot, 'auc').add_legend())
+    # # Plot
+    # g = sns.FacetGrid(auc_dataframe, col='library', hue='normalization')
+    # g = (g.map(sns.distplot, 'auc').add_legend())
 
-    # Save figure
-    g.savefig(outfile)
+    # # Save figure
+    # g.savefig(outfile)
 
 ##################################################
 ##################################################

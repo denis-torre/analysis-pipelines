@@ -9,18 +9,34 @@
 #############################################
 ##### 1. General support #####
 source('/Users/denis/Documents/Projects/scripts/Support.R')
+require(ggplot2)
 
 ##### 2. Other libraries #####
 
 #######################################################
 #######################################################
-########## S1. 
+########## S1. Plot AUC
 #######################################################
 #######################################################
 
 #############################################
-########## 1. 
+########## 1. Plot AUC Distribution
 #############################################
+
+plot_auc <- function(infile, outfile) {
+
+	# Get AUC scores
+    auc_dataframe <- read.csv2(infile, sep='\t')
+
+    # Convert to numeric
+    auc_dataframe$auc <- as.numeric(as.character(auc_dataframe$auc))
+
+    # Plot
+    gp <- ggplot(auc_dataframe, aes(x=auc, color=normalization)) + geom_density() + facet_wrap(library~., scales='free_y') + theme_minimal()
+
+    # Write
+    ggsave(outfile, gp, width=7, height=3.5, dpi=150)
+}
 
 
 #######################################################
