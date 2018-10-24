@@ -50,6 +50,10 @@ def readGMT(infile):
                 gmt[split_line[0]] = [x.split(',')[0] for x in split_line[2:]]
     return gmt
 
+# Z-score
+def zscoreDF(df): return (df - df.mean())/df.std()
+
+
 #######################################################
 #######################################################
 ########## S1. Prepare Data
@@ -61,7 +65,7 @@ def readGMT(infile):
 #############################################
 
 def normalizeJobs():
-    for method in ['fraction', 'zscore', 'raw']:
+    for method in ['raw', 'zscore_row', 'zscore_row_nodiag']:
         yield ['feather.dir/list_off_co.feather', 's1-normalized.dir/{}.feather'.format(method)]
 
 @follows(mkdir('s1-normalized.dir'))
@@ -83,6 +87,12 @@ def normalizeCounts(infile, outfile):
         enrichr_dataframe = enrichr_dataframe
     if method == 'zscore':
         enrichr_dataframe = enrichr_dataframe.apply(ss.zscore)
+    if method == 'zscore_row':
+        enrichr_dataframe = enrichr_dataframe.T.apply(ss.zscore).T
+    if method == 'zscore_row_nodiag':
+        enrichr_dataframe = enrichr_dataframe.astype(float)
+        np.fill_diagonal(enrichr_dataframe.values, np.nan)
+        enrichr_dataframe = zscoreDF(enrichr_dataframe)
 
     # Save
     enrichr_dataframe.reset_index().to_feather(outfile)
@@ -229,5 +239,5 @@ def plotAucScores(infile, outfile):
 ########## Run pipeline
 ##################################################
 ##################################################
-pipeline_run([sys.argv[-1]], multiprocess=1, verbose=1)
+pipeline_run([sys.argv[-1]], multiprocess=4, verbose=1)
 print('Done!')
