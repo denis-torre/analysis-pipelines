@@ -116,7 +116,7 @@ def getAverageScores(infiles, outfile):
 
     # Loop through data
     for term, term_genes in gmt.items():
-        results[term] = score_dataframe.reindex(term_genes).mean()
+        results[term] = score_dataframe.reindex(term_genes, axis=1).mean(axis=1)
 
     # Get dataframe
     results_dataframe = pd.DataFrame(results).rename_axis('gene_symbol').reset_index()
@@ -173,10 +173,13 @@ def getAucScores(infiles, outfile):
 
 @follows(mkdir('s4-merged_auc.dir'))
 
-@merge(getAucScores,#glob.glob('s3-auc_scores.dir/*.txt'),  # getAucScores,
+@merge([getAucScores, glob.glob('libraries.dir/*.txt')],#glob.glob('s3-auc_scores.dir/*.txt'),  # getAucScores,
        's4-merged_auc.dir/merged_auc.txt')
 
 def mergeAucScores(infiles, outfile):
+
+    # GMT files
+    gmt_files = infiles.pop(-1)
 
     # Initialize result
     result_dataframe = pd.DataFrame()
@@ -196,6 +199,12 @@ def mergeAucScores(infiles, outfile):
         
         # Append
         result_dataframe = result_dataframe.append(auc_dataframe)
+
+    # Get term sizes
+    term_sizes = {term: len(term_genes) for gmt_file in gmt_files for term, term_genes in readGMT(gmt_file).items()}
+
+    # Add term sizes
+    result_dataframe = result_dataframe.merge(pd.Series(term_sizes).rename('nr_genes').to_frame(), left_on='term_name', right_index=True)
         
     # Write
     result_dataframe.to_csv(outfile, sep='\t', index=False)
