@@ -51,8 +51,7 @@ def readGMT(infile):
     return gmt
 
 # Z-score
-def zscoreDF(df): return (df - df.mean())/df.std()
-
+def zscoreDF(df): return ((df.T - df.T.mean())/df.T.std()).T
 
 #######################################################
 #######################################################
@@ -65,7 +64,7 @@ def zscoreDF(df): return (df - df.mean())/df.std()
 #############################################
 
 def normalizeJobs():
-    for method in ['raw', 'zscore_row', 'zscore_row_nodiag']:
+    for method in ['raw', 'fraction', 'zscore', 'zscore_nodiag', 'random']:
         yield ['feather.dir/list_off_co.feather', 's1-normalized.dir/{}.feather'.format(method)]
 
 @follows(mkdir('s1-normalized.dir'))
@@ -82,20 +81,22 @@ def normalizeCounts(infile, outfile):
 
     # Normalize
     if method == 'fraction':
-        enrichr_dataframe = enrichr_dataframe.apply(lambda x: x/max(x))
-    if method == 'raw':
-        enrichr_dataframe = enrichr_dataframe
-    if method == 'zscore':
-        enrichr_dataframe = enrichr_dataframe.apply(ss.zscore)
-    if method == 'zscore_row':
-        enrichr_dataframe = enrichr_dataframe.T.apply(ss.zscore).T
-    if method == 'zscore_row_nodiag':
+        normalized_dataframe = enrichr_dataframe.apply(lambda x: x/max(x), axis=1)
+    elif method == 'raw':
+        normalized_dataframe = enrichr_dataframe
+    elif method == 'zscore':
+        normalized_dataframe = zscoreDF(enrichr_dataframe)
+    elif method == 'zscore_nodiag':
         enrichr_dataframe = enrichr_dataframe.astype(float)
         np.fill_diagonal(enrichr_dataframe.values, np.nan)
-        enrichr_dataframe = zscoreDF(enrichr_dataframe)
+        normalized_dataframe = zscoreDF(enrichr_dataframe)
+    elif method == 'random':
+        normalized_dataframe = enrichr_dataframe.T.apply(lambda x: np.random.rand(len(x))).T
+    else:
+        raise ValueError
 
     # Save
-    enrichr_dataframe.reset_index().to_feather(outfile)
+    normalized_dataframe.reset_index().to_feather(outfile)
 
 #############################################
 ########## 2. Get average scores
