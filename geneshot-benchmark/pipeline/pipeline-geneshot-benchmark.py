@@ -35,6 +35,7 @@ import GeneshotBenchmark as P
 ########## 2. General Setup
 #############################################
 ##### 1. Variables #####
+libraries = glob.glob('libraries.dir/*.txt')
 
 ##### 2. R Connection #####
 r.source('pipeline/scripts/geneshot-benchmark.R')
@@ -72,7 +73,7 @@ def zscoreDF(df): return ((df.T - df.T.mean())/df.T.std()).T
 #############################################
 
 def normalizeJobs():
-    for method in ['raw', 'fraction', 'zscore', 'random']:
+    for method in []:#['raw', 'fraction', 'zscore', 'random']:
         yield ['feather.dir/list_off_co.feather', 's1-normalized.dir/{}.feather'.format(method)]
 
 @follows(mkdir('s1-normalized.dir'))
@@ -114,48 +115,11 @@ def normalizeCounts(infile, outfile):
 
 @product(glob.glob('s1-normalized.dir/*.feather'),
          formatter(r'.*/(.*).feather'),
-         glob.glob('libraries.dir/*.txt'),
+         libraries,
          formatter(r'.*/(.*).txt'),
          's2-average_scores.dir/{1[0][0]}-{1[1][0]}.feather')
 
 def getAverageScores(infiles, outfile):
-
-    # Print
-    print('Doing {}...'.format(outfile))
-
-    # Read scores
-    score_dataframe = pd.read_feather(infiles[0]).set_index('gene_symbol').astype(float)
-    np.fill_diagonal(score_dataframe.values, np.nan)
-
-    # Read GMT
-    gmt = readGMT(infiles[1])
-
-    # Initialize results
-    results = {}
-
-    # Loop through data
-    for term, term_genes in gmt.items():
-        results[term] = score_dataframe.reindex(term_genes, axis=1).mean(axis=1)
-
-    # Get dataframe
-    results_dataframe = pd.DataFrame(results).rename_axis('gene_symbol').reset_index()
-
-    # Save
-    results_dataframe.to_feather(outfile)
-
-#############################################
-########## 2. Get average scores
-#############################################
-
-# @follows(mkdir('s3-average_scores_gene.dir'), normalizeCounts)
-
-@product(glob.glob('s1-normalized.dir/*.feather'),
-         formatter(r'.*/(.*).feather'),
-         glob.glob('libraries.dir/*.txt'),
-         formatter(r'.*/(.*).txt'),
-         's2-average_scores.dir/{1[0][0]}-{1[1][0]}-gene.feather')
-
-def getAverageGeneScores(infiles, outfile):
 
     # Print
     print('Doing {}...'.format(outfile))
@@ -189,7 +153,7 @@ def getAverageGeneScores(infiles, outfile):
 @transform(getAverageScores,
            regex(r'.*/(.*)-(.*).feather'),
            add_inputs(r'libraries.dir/\2.txt'),
-           r's3-auc_scores.dir/\1-\2-scores.txt')
+           r's3-auc_scores.dir/\1-\2-library_scores.txt')
 
 def getAucScores(infiles, outfile):
 
@@ -224,18 +188,63 @@ def getAucScores(infiles, outfile):
     auc_dataframe.to_csv(outfile, sep='\t')
 
 #############################################
+########## 4. Get AUC scores
+#############################################
+
+@follows(mkdir('s3-auc_scores.dir'))
+
+@transform(getAverageScores,
+           regex(r'.*/(.*)-(.*).feather'),
+           add_inputs(r'libraries.dir/\2.txt'),
+           r's3-auc_scores.dir/\1-\2-gene_scores.txt')
+
+def getGeneAucScores(infiles, outfile):
+
+    # Print
+    print('Doing {}...'.format(outfile))
+
+    # Get average
+    average_score_dataframe = pd.read_feather(infiles[0]).set_index('gene_symbol').dropna(axis=1)
+
+    # Get binary dataframe
+    gmt = readGMT(infiles[1])
+    reverse_gmt = reverseGMT(gmt)
+
+    # Initialize results
+    auc = {}
+
+    # Loop through columns
+    for index, rowData in average_score_dataframe.iterrows():
+
+        # Binarize terms
+        term_binary = [x in reverse_gmt.get(index, []) for x in average_score_dataframe.columns]
+
+        # Store results
+        if any(term_binary):
+            auc[index] = roc_auc_score(term_binary, rowData)
+        else:
+            auc[index] = np.nan
+
+    # Merge
+    auc_dataframe = pd.Series(auc, name='auc').to_frame().rename_axis('gene_symbol')
+
+    # Write
+    auc_dataframe.to_csv(outfile, sep='\t')
+
+#############################################
 ########## 5. Merge AUC scores
 #############################################
 
-@follows(mkdir('s4-merged_auc.dir'))
+# @follows(mkdir('s4-merged_auc.dir'), getAucScores, getGeneAucScores)
 
-@merge([getAucScores, glob.glob('libraries.dir/*.txt')],#glob.glob('s3-auc_scores.dir/*.txt'),  # getAucScores,
-       's4-merged_auc.dir/merged_auc.txt')
+# @merge([getAucScores, glob.glob('libraries.dir/*.txt')],
+    #    's4-merged_auc.dir/merged_auc.txt')
+@collate('s3-auc_scores.dir/*_scores.txt',
+         regex(r'.*/.*-(.*)_scores.txt'),
+         r's4-merged_auc.dir/\1_auc.txt',
+         libraries)
 
-def mergeAucScores(infiles, outfile):
-
-    # GMT files
-    gmt_files = infiles.pop(-1)
+def mergeAucScores(infiles, outfile, libraries):
 
     # Initialize result
     result_dataframe = pd.DataFrame()
@@ -257,7 +266,7 @@ def mergeAucScores(infiles, outfile):
         result_dataframe = result_dataframe.append(auc_dataframe)
 
     # Get term sizes
-    term_sizes = {term: len(term_genes) for gmt_file in gmt_files for term, term_genes in readGMT(gmt_file).items()}
+    term_sizes = {term: len(term_genes) for gmt_file in libraries for term, term_genes in readGMT(gmt_file).items()}
 
     # Add term sizes
     result_dataframe = result_dataframe.merge(pd.Series(term_sizes).rename('nr_genes').to_frame(), left_on='term_name', right_index=True)
@@ -273,12 +282,13 @@ def mergeAucScores(infiles, outfile):
 
 @transform(mergeAucScores,
            regex(r'.*/(.*).txt'),
-           r's5-auc_plots.dir/\1.png')
+           r's5-auc_plots.dir/\1-.png')
 
 def plotAucScores(infile, outfile):
 
     # Plot
-    r.plot_auc(infile, outfile)
+    for plot_type in ['density', 'violin']:
+        r.plot_auc(infile, outfile.replace('.png', plot_type+'.png'), plot_type=plot_type)
 
 ##################################################
 ##################################################
