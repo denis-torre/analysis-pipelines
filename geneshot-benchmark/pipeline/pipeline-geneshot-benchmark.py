@@ -50,6 +50,14 @@ def readGMT(infile):
                 gmt[split_line[0]] = [x.split(',')[0] for x in split_line[2:]]
     return gmt
 
+# Reverse GMT
+def reverseGMT(gmt):
+    gmt_list = [{'term': term, 'gene_symbol': gene, 'value': 1} for term, genes in gmt.items() for gene in genes]
+    gmt_dataframe = pd.DataFrame(gmt_list).pivot_table(index='gene_symbol', columns='term', values='value', fill_value=0)
+    reverse_gmt = {gene_symbol: [key for key, value in rowData.items() if value] for gene_symbol, rowData in gmt_dataframe.iterrows()}
+    return reverse_gmt
+
+
 # Z-score
 def zscoreDF(df): return ((df.T - df.T.mean())/df.T.std()).T
 
@@ -64,7 +72,7 @@ def zscoreDF(df): return ((df.T - df.T.mean())/df.T.std()).T
 #############################################
 
 def normalizeJobs():
-    for method in ['raw', 'fraction', 'zscore', 'zscore_nodiag', 'random']:
+    for method in ['raw', 'fraction', 'zscore', 'random']:
         yield ['feather.dir/list_off_co.feather', 's1-normalized.dir/{}.feather'.format(method)]
 
 @follows(mkdir('s1-normalized.dir'))
@@ -111,6 +119,43 @@ def normalizeCounts(infile, outfile):
          's2-average_scores.dir/{1[0][0]}-{1[1][0]}.feather')
 
 def getAverageScores(infiles, outfile):
+
+    # Print
+    print('Doing {}...'.format(outfile))
+
+    # Read scores
+    score_dataframe = pd.read_feather(infiles[0]).set_index('gene_symbol').astype(float)
+    np.fill_diagonal(score_dataframe.values, np.nan)
+
+    # Read GMT
+    gmt = readGMT(infiles[1])
+
+    # Initialize results
+    results = {}
+
+    # Loop through data
+    for term, term_genes in gmt.items():
+        results[term] = score_dataframe.reindex(term_genes, axis=1).mean(axis=1)
+
+    # Get dataframe
+    results_dataframe = pd.DataFrame(results).rename_axis('gene_symbol').reset_index()
+
+    # Save
+    results_dataframe.to_feather(outfile)
+
+#############################################
+########## 2. Get average scores
+#############################################
+
+# @follows(mkdir('s3-average_scores_gene.dir'), normalizeCounts)
+
+@product(glob.glob('s1-normalized.dir/*.feather'),
+         formatter(r'.*/(.*).feather'),
+         glob.glob('libraries.dir/*.txt'),
+         formatter(r'.*/(.*).txt'),
+         's2-average_scores.dir/{1[0][0]}-{1[1][0]}-gene.feather')
+
+def getAverageGeneScores(infiles, outfile):
 
     # Print
     print('Doing {}...'.format(outfile))
@@ -240,5 +285,5 @@ def plotAucScores(infile, outfile):
 ########## Run pipeline
 ##################################################
 ##################################################
-pipeline_run([sys.argv[-1]], multiprocess=4, verbose=1)
+pipeline_run([sys.argv[-1]], multiprocess=1, verbose=1)
 print('Done!')

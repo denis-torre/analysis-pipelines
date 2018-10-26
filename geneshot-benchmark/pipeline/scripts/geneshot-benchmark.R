@@ -29,7 +29,7 @@ plot_auc <- function(infile, outfile) {
     auc_dataframe <- read.csv2(infile, sep='\t')
 
     # Filter
-    auc_dataframe <- auc_dataframe[auc_dataframe$normalization %in% c('correlation', 'correlation_abs', 'raw', 'fraction', 'zscore', 'random'),]
+    auc_dataframe <- auc_dataframe[auc_dataframe$normalization %in% c('correlation', 'zscore', 'generif_overlap_zscore', 'autorif_overlap_zscore'),]
 
     # Convert to numeric
     auc_dataframe$auc <- as.numeric(as.character(auc_dataframe$auc))
