@@ -216,12 +216,12 @@ def getGeneAucScores(infiles, outfile):
     # Loop through columns
     for index, rowData in average_score_dataframe.iterrows():
 
-        # Binarize terms
-        term_binary = [x in reverse_gmt.get(index, []) for x in average_score_dataframe.columns]
+        # Binarize genes
+        gene_binary = [x in reverse_gmt.get(index, []) for x in average_score_dataframe.columns]
 
         # Store results
-        if any(term_binary):
-            auc[index] = roc_auc_score(term_binary, rowData)
+        if any(gene_binary):
+            auc[index] = roc_auc_score(gene_binary, rowData)
         else:
             auc[index] = np.nan
 
@@ -235,7 +235,7 @@ def getGeneAucScores(infiles, outfile):
 ########## 5. Merge AUC scores
 #############################################
 
-# @follows(mkdir('s4-merged_auc.dir'), getAucScores, getGeneAucScores)
+@follows(mkdir('s4-merged_auc.dir'), getAucScores, getGeneAucScores)
 
 # @merge([getAucScores, glob.glob('libraries.dir/*.txt')],
     #    's4-merged_auc.dir/merged_auc.txt')
@@ -269,7 +269,8 @@ def mergeAucScores(infiles, outfile, libraries):
     term_sizes = {term: len(term_genes) for gmt_file in libraries for term, term_genes in readGMT(gmt_file).items()}
 
     # Add term sizes
-    result_dataframe = result_dataframe.merge(pd.Series(term_sizes).rename('nr_genes').to_frame(), left_on='term_name', right_index=True)
+    if 'library' in outfile:
+        result_dataframe = result_dataframe.merge(pd.Series(term_sizes).rename('nr_genes').to_frame(), left_on='term_name', right_index=True)
         
     # Write
     result_dataframe.to_csv(outfile, sep='\t', index=False)
@@ -287,13 +288,17 @@ def mergeAucScores(infiles, outfile, libraries):
 def plotAucScores(infile, outfile):
 
     # Plot
-    for plot_type in ['density', 'violin']:
-        r.plot_auc(infile, outfile.replace('.png', plot_type+'.png'), plot_type=plot_type)
+    for plot_type in ['density']: #'violin'
+        for na in [True, False]:
+            r.plot_auc(infile, outfile.replace('.png', (plot_type+('_withna' if na else '')+'.png')), plot_type=plot_type, na=na)
 
 ##################################################
 ##################################################
 ########## Run pipeline
 ##################################################
 ##################################################
-pipeline_run([sys.argv[-1]], multiprocess=1, verbose=1)
+if 'plot' in sys.argv[-1]:
+    pipeline_run([sys.argv[-1]], multiprocess=1, verbose=1)
+else:
+    pipeline_run([sys.argv[-1]], multiprocess=4, verbose=1)
 print('Done!')
