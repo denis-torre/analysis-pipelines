@@ -32,14 +32,14 @@ plot_auc <- function(infile, outfile, plot_type, na) {
     auc_dataframe <- read.csv2(infile, sep='\t')
 
     # Filter
-    auc_dataframe <- auc_dataframe[auc_dataframe$normalization %in% c('correlation', 'zscore', 'generif_overlap_zscore', 'autorif_overlap_zscore', 'random'),]
+    auc_dataframe <- auc_dataframe[auc_dataframe$normalization %in% c('correlation_v2', 'zscore', 'generif_overlap_zscore', 'autorif_overlap_zscore', 'random'),]
 
     # Convert variables
     auc_dataframe$Similarity <- as.character(auc_dataframe$normalization)
     auc_dataframe$auc <- as.numeric(as.character(auc_dataframe$auc))
 
     # Replace
-    auc_dataframe[auc_dataframe == 'correlation'] <- 'ARCHS4 Coexpression'
+    auc_dataframe[auc_dataframe == 'correlation_v2'] <- 'ARCHS4 Coexpression'
     auc_dataframe[auc_dataframe == 'zscore'] <- 'Enrichr Co-occurrence'
     auc_dataframe[auc_dataframe == 'generif_overlap_zscore'] <- 'GeneRIF'
     auc_dataframe[auc_dataframe == 'autorif_overlap_zscore'] <- 'AutoRIF'
