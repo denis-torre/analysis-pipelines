@@ -58,7 +58,6 @@ def reverseGMT(gmt):
     reverse_gmt = {gene_symbol: [key for key, value in rowData.items() if value] for gene_symbol, rowData in gmt_dataframe.iterrows()}
     return reverse_gmt
 
-
 # Z-score
 def zscoreDF(df): return ((df.T - df.T.mean())/df.T.std()).T
 
@@ -220,7 +219,7 @@ def getGeneAucScores(infiles, outfile):
         gene_binary = [x in reverse_gmt.get(index, []) for x in average_score_dataframe.columns]
 
         # Store results
-        if any(gene_binary):
+        if sum(gene_binary) > 10:
             auc[index] = roc_auc_score(gene_binary, rowData)
         else:
             auc[index] = np.nan
@@ -288,9 +287,10 @@ def mergeAucScores(infiles, outfile, libraries):
 def plotAucScores(infile, outfile):
 
     # Plot
+    na=False
     for plot_type in ['density']: #'violin'
-        for na in [True, False]:
-            r.plot_auc(infile, outfile.replace('.png', (plot_type+('_withna' if na else '')+'.png')), plot_type=plot_type, na=na)
+        # for na in [True, False]:
+        r.plot_auc(infile, outfile.replace('.png', (plot_type+('_withna' if na else '')+'.png')), plot_type=plot_type, na=na)
 
 ##################################################
 ##################################################

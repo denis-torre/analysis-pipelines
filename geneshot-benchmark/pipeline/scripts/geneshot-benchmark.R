@@ -32,7 +32,11 @@ plot_auc <- function(infile, outfile, plot_type, na) {
     auc_dataframe <- read.csv2(infile, sep='\t')
 
     # Filter
-    auc_dataframe <- auc_dataframe[auc_dataframe$normalization %in% c('correlation_v2', 'zscore', 'generif_overlap_zscore', 'autorif_overlap_zscore', 'random'),]
+    # auc_dataframe <- auc_dataframe[auc_dataframe$normalization %in% c('correlation_v2', 'raw', 'zscore', 'generif_overlap', 'autorif_overlap', 'random'),]
+    # auc_dataframe <- auc_dataframe[auc_dataframe$normalization %in% c('correlation_v2', 'zscore', 'zscore_subset', 'generif_overlap_zscore', 'autorif_overlap_zscore', 'random'),]
+    auc_dataframe <- auc_dataframe[auc_dataframe$normalization %in% c('zscore', 'zscore_subset'),]
+    # auc_dataframe <- auc_dataframe[auc_dataframe$normalization %in% c('raw', 'zscore', 'generif_overlap_zscore', 'autorif_overlap_zscore', 'generif_overlap', 'autorif_overlap'),]
+    # auc_dataframe <- auc_dataframe[auc_dataframe$normalization %in% c('generif_overlap_zscore', 'autorif_overlap_zscore', 'generif_overlap', 'autorif_overlap'),]
 
     # Convert variables
     auc_dataframe$Similarity <- as.character(auc_dataframe$normalization)
@@ -41,6 +45,7 @@ plot_auc <- function(infile, outfile, plot_type, na) {
     # Replace
     auc_dataframe[auc_dataframe == 'correlation_v2'] <- 'ARCHS4 Coexpression'
     auc_dataframe[auc_dataframe == 'zscore'] <- 'Enrichr Co-occurrence'
+    auc_dataframe[auc_dataframe == 'zscore_subset'] <- 'Enrichr Co-occurrence Subset'
     auc_dataframe[auc_dataframe == 'generif_overlap_zscore'] <- 'GeneRIF'
     auc_dataframe[auc_dataframe == 'autorif_overlap_zscore'] <- 'AutoRIF'
     auc_dataframe[auc_dataframe == 'random'] <- 'Random'
