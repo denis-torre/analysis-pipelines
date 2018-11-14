@@ -33,8 +33,8 @@ plot_auc <- function(infile, outfile, plot_type, na) {
 
     # Filter
     # auc_dataframe <- auc_dataframe[auc_dataframe$normalization %in% c('correlation_v2', 'raw', 'zscore', 'generif_overlap', 'autorif_overlap', 'random'),]
-    # auc_dataframe <- auc_dataframe[auc_dataframe$normalization %in% c('correlation_v2', 'zscore', 'zscore_subset', 'generif_overlap_zscore', 'autorif_overlap_zscore', 'random'),]
-    auc_dataframe <- auc_dataframe[auc_dataframe$normalization %in% c('zscore', 'zscore_subset'),]
+    auc_dataframe <- auc_dataframe[auc_dataframe$normalization %in% c('correlation_v2', 'zscore', 'generif_overlap_zscore', 'autorif_overlap_zscore', 'random'),]
+    # auc_dataframe <- auc_dataframe[auc_dataframe$normalization %in% c('zscore', 'zscore_subset'),]
     # auc_dataframe <- auc_dataframe[auc_dataframe$normalization %in% c('raw', 'zscore', 'generif_overlap_zscore', 'autorif_overlap_zscore', 'generif_overlap', 'autorif_overlap'),]
     # auc_dataframe <- auc_dataframe[auc_dataframe$normalization %in% c('generif_overlap_zscore', 'autorif_overlap_zscore', 'generif_overlap', 'autorif_overlap'),]
 

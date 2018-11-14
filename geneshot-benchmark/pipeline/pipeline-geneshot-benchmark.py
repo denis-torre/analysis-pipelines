@@ -58,6 +58,12 @@ def reverseGMT(gmt):
     reverse_gmt = {gene_symbol: [key for key, value in rowData.items() if value] for gene_symbol, rowData in gmt_dataframe.iterrows()}
     return reverse_gmt
 
+# Filter score dataframe
+def filterScores(average_score_dataframe, gmt):
+    gmt_genes = set([s for l in gmt.values() for s in l])
+    common_genes = gmt_genes.intersection(set(average_score_dataframe.index))
+    return average_score_dataframe.reindex(common_genes)
+
 # Z-score
 def zscoreDF(df): return ((df.T - df.T.mean())/df.T.std()).T
 
@@ -165,6 +171,9 @@ def getAucScores(infiles, outfile):
     # Get binary dataframe
     gmt = readGMT(infiles[1])
 
+    # Filter
+    average_score_dataframe = filterScores(average_score_dataframe, gmt)
+
     # Initialize results
     auc = {}
 
@@ -175,7 +184,7 @@ def getAucScores(infiles, outfile):
         term_binary = [x in gmt[column] for x in average_score_dataframe.index]
         
         # Store results
-        if any(term_binary):
+        if any(term_binary) and not all(term_binary):
             auc[column] = roc_auc_score(term_binary, colData)
         else:
             auc[column] = np.nan
@@ -209,6 +218,9 @@ def getGeneAucScores(infiles, outfile):
     gmt = readGMT(infiles[1])
     reverse_gmt = reverseGMT(gmt)
 
+    # Filter
+    average_score_dataframe = filterScores(average_score_dataframe, gmt)
+
     # Initialize results
     auc = {}
 
@@ -219,7 +231,7 @@ def getGeneAucScores(infiles, outfile):
         gene_binary = [x in reverse_gmt.get(index, []) for x in average_score_dataframe.columns]
 
         # Store results
-        if sum(gene_binary) > 10:
+        if sum(gene_binary) > 10 and not all(gene_binary):
             auc[index] = roc_auc_score(gene_binary, rowData)
         else:
             auc[index] = np.nan
