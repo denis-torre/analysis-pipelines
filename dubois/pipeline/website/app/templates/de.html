@@ -1,0 +1,131 @@
+<link rel="stylesheet" href="//cdn.datatables.net/1.10.19/css/jquery.dataTables.min.css">
+
+
+<!-- Differential Expression Explorer -->
+<!-- Intro -->
+<div class="h3 mt-5 pt-5">Differential Expression</div>
+<hr width="100%">
+<div class="row" class="bg-muted">
+    <div class="col-12">
+        <div>Select a condition:</div>
+        <select class="mt-2 condition-select">
+            <option value=" + delta"> + delta</option>
+            <option value=" + FA"> + FA</option>
+            <option value=" + FA + delta"> + FA + delta</option>
+            <option value=" + alpha"> + alpha</option>
+            <option value=" + FA + alpha"> + FA + alpha</option>
+            <option value=" + gamma"> + gamma</option>
+            <option value=" + FA  + gamma"> + FA + gamma</option>
+            <option value=" + GSK"> + GSK</option>
+            <option value=" + delta, 1d"> + delta, 1d</option>
+            <option value=" + delta, 2d"> + delta, 2d</option>
+            <option value=" + delta, 3d"> + delta, 3d</option>
+            <option value="D10, 7d">D10, 7d</option>
+            <option value=" + delta, 7d"> + delta, 7d</option>
+            <option value=" + FA, 7d"> + FA, 7d</option>
+            <option value=" + FA + delta, 7d"> + FA + delta, 7d</option>
+            <option value=" + delta, 7d - phased"> + delta, 7d - phased</option>
+            <option value=" + FA + delta, 7d -phased"> + FA + delta, 7d -phased</option>
+            <option value=" + hiFA"> + hiFA</option>
+            <option value=" + hiFA + delta"> + hiFA + delta</option>
+            <option value="Lact Control">Lact Control</option>
+            <option value="Lact + delta">Lact + delta</option>
+            <option value="Lact + FA">Lact + FA</option>
+            <option value="Lact + FA + delta">Lact + FA + delta</option>
+            <option value="AICAR">AICAR</option>
+            <option value="AICAR + delta">AICAR + delta</option>
+            <option value="AICAR + FA">AICAR + FA</option>
+            <option value="AICAR +FA + delta">AICAR +FA + delta</option>
+            <option value="EHT D10 Control">EHT D10 Control</option>
+            <option value="EHT + delta">EHT + delta</option>
+            <option value="EHT + FA">EHT + FA</option>
+            <option value="EHT + FA + delta">EHT + FA + delta</option>
+            <option value="EHT + GSK">EHT + GSK</option>
+            <option value="EBs">EBs</option>
+        </select>
+    </div>
+</div>
+
+<!-- MA Plot -->
+<div class="row mb-5">
+    <div class="col-12">
+        <div id="maplot" class="plotly-plot"></div>
+    </div>
+</div>
+
+<!-- Table -->
+<div id="table-loader" class="text-center" style="background-color: rgba(0,0,0,0.1); height: 500px; font-size: 30pt; padding: 200px 0px;">
+    Loading table...
+</div>
+<div class="row d-none">
+    <div class="col-12">
+        <table id="table" class="table table-striped w-100">
+            <thead>
+                <tr>
+                    <th>Gene Symbol</th>
+                    <th>Average Expression</th>
+                    <th>logFC</th>
+                    <th>P-Value</th>
+                    <th>FDR</th>
+                </tr>
+            </thead>
+    </div>
+</div>
+</div>
+
+
+</div>
+
+
+        <script src="//cdn.datatables.net/1.10.19/js/jquery.dataTables.min.js"></script>
+
+
+
+            //////////////////////////////////
+            /// Differential Expression
+            //////////////////////////////////
+            
+            // Condition Selectize
+            var $condition_select = $('.condition-select').selectize({});
+            
+            // Plot function
+            function maplot(condition) {
+            
+            // Set loading
+            $('#maplot').html('').addClass('loading');
+            
+            // Read JSON
+            $.getJSON("{{ url_for('static', filename='limma-merged_plot.json') }}", function (results) {
+            // Initialize data
+            var data = [];
+            
+            // Loop through conditions
+            $.each(results[condition.split(' ').join('')], function(group, values) {
+            data.unshift({
+            x: values.AveExpr,
+            y: values.logFC,
+            text: values.gene_symbol,
+            type: 'scattergl',
+            mode: 'markers',
+            hoverinfo: 'text',
+            name: group === 'true' ? 'Significant (FDR < 0.05)' : 'Not Significant' , marker: { color: group==='true' ? 'red' :
+                'black' } }) }) // Layout var layout={ title: 'Control vs ' +condition, hovermode: 'closest' , yaxis: { title:
+                'log2FoldChange' }, xaxis: { title: 'Average Expression' } } // Plot Plotly.newPlot('maplot', data, layout); // Set
+                loading $('#maplot').removeClass('loading'); }); } // Table function function detable(condition) {
+                $('#table').parents('.row').addClass('d-none'); $('#table-loader').removeClass('d-none'); $.getJSON("{{
+                url_for('static', filename='limma-merged_table.json' ) }}", function (results) { $('#table').dataTable({ destroy:
+                true, data: results[condition.split(' ').join('')],
+                                    columns: [
+                                        { "data": "gene_symbol" },
+                                        { "data": "AveExpr" },
+                                        { "data": "logFC" },
+                                        { "data": "pvalue" },
+                                        { "data": "fdr" }
+                                    ]
+                                })
+            
+                                $('
+                #table').parents('.row').removeClass('d-none'); $('#table-loader').addClass('d-none'); }) } // Set value var
+                condition_selectize=$condition_select[0].selectize; // Event listener condition_selectize.on('change',
+                function(value) { if (value) { maplot(value); detable(value); } }) // Set value condition_selectize.setValue('D10,
+                7d'); })

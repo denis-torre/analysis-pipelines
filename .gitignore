@@ -5,6 +5,6 @@
 .Rhistory
 rawdata
 *.json
-dubois/pipeline/website
+dubois/pipeline/website/*.json
 dubois/pipeline/notebooks
 dubois/pipeline/presentations

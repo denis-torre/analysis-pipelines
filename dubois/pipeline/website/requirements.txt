@@ -1,0 +1,4 @@
+Flask
+flask-basicauth
+uwsgi
+pandas

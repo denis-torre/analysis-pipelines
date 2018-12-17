@@ -1,0 +1,1 @@
+docker build -t maayanlab/dubois .; docker push maayanlab/dubois;

@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html class="h-100">
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title>Dubois RNA-seq Analysis</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/css/bootstrap.min.css" integrity="sha384-MCw98/SFnGE8fJT3GXwEOngsV7Zt27NXFoaoApmYm81iuXoPkFOJwJ8ERdknLPMO" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/selectize.js/0.12.4/css/selectize.default.min.css">
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        .plotly-plot {
+            width: 1092px;
+            height: 450px;
+        }
+        .plotly-plot.loading::after {
+            content: 'Loading plot...';
+            width: 1092px;
+            height: 450px;
+            background-color: rgba(0,0,0,0.1);
+            position: absolute;
+            text-align: center;
+            padding-top: 175px;
+            font-size: 30pt;
+        }
+    </style>
+</head>
+<body class="bg-secondary h-100">
+
+    <!-- Navbar -->
+    <nav class="navbar navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="#">Dubois RNA-seq Analysis</a>
+        </div>
+    </nav>
+
+
+    <div class="container bg-white px-4 pb-5" style="min-height: 100%;">
+
+        <!-- Gene Expression Explorer -->
+        <!-- Intro -->
+        <div class="row" class="bg-muted">
+            <div class="col-12">
+                <div class="h3 mt-3">Expression Boxplots</div>
+                <hr width="100%">
+                <div>Search a gene symbol:</div>
+                <select class="mt-2 gene-select"></select>
+            </div>
+        </div>
+
+        
+        <!-- Plot -->
+        <div class="row">
+            <div class="col-12">
+                <div id="boxplot" class="plotly-plot"></div>
+            </div>
+        </div>
+
+        <!-- Sample Summary -->
+        <div class="row">
+            <div class="col-12"></div>
+        </div>
+
+    <!-- Scripts -->
+    <div id="scripts">
+        <script src="https://code.jquery.com/jquery-3.3.1.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.3/umd/popper.min.js" integrity="sha384-ZMP7rVo3mIykV+2+9J3UJ46jBk0WLaUAdn689aCwoqbBJiSnjAK/l8WvCWPIPm49" crossorigin="anonymous"></script>
+        <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/js/bootstrap.min.js" integrity="sha384-ChfqqxuZUCnJSK3+MXmPNIyE6ZbWh2IMqE241rYiqJxyMiZ6OW/JmZQ5stwEULTy" crossorigin="anonymous"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/selectize.js/0.12.4/js/standalone/selectize.min.js"></script>
+        <script>
+
+        $(document).ready(function () {
+
+            //////////////////////////////////
+            /// Gene Boxplots
+            //////////////////////////////////
+            // Gene Selectize
+            var $gene_select = $('.gene-select').selectize({
+                preload: true,
+                valueField: 'gene_symbol',
+                labelField: 'gene_symbol',
+                searchField: 'gene_symbol',
+                render: {
+                    option: function (item, escape) {
+                        return '<div class="pt-2 light">'+item.gene_symbol+'</div>';
+                    }
+                },
+                load: function (query, callback) {
+                    // if (!query.length) return callback();
+                    $.ajax({
+                        url: "{{ url_for('static', filename='genes.json') }}",
+                        dataType: 'json',
+                        error: function () {
+                            callback();
+                        },
+                        success: function (res) {
+                            callback(res);
+                        }
+                    });
+                }
+            });
+
+            // Plot function
+            function boxplot(gene_symbol) {
+
+                // Status
+                $('#boxplot').html('').addClass('loading');
+
+                // Read JSON
+                $.getJSON("{{ url_for('static', filename='dubiois-grouped_logCPM.json') }}", function (expression) {
+                    
+                    // Initialize data
+                    var data = [];
+
+                    // Loop through conditions
+                    $.each(expression[gene_symbol], function(group, values) {
+                        data.push({
+                            y: values,
+                            type: 'box',
+                            name: group
+                        })
+                    })
+
+                    // Layout
+                    var layout = {
+                        title: gene_symbol+' Expression',
+                        yaxis: {
+                            title: 'Expression<br>(log10 Counts per Million)\n'
+                        },
+                        xaxix: {
+                            title: 'Group'
+                        }
+                    }
+
+                    // Plot
+                    Plotly.newPlot('boxplot', data, layout);
+        
+                    // Status
+                    $('#boxplot').removeClass('loading');
+                });
+
+
+            }
+
+            // Set value
+            var boxplot_selectize = $gene_select[0].selectize;
+
+            // Event listener
+            boxplot_selectize.on('change', function(value) {
+                if (value) {
+                    boxplot(value);
+                }
+            })
+
+            // Plot
+            boxplot('A1BG');
+
+            // Load
+            // boxplot_selectize.on('load', function(value) {
+                // Set value
+                // boxplot_selectize.setValue('A1BG');
+            // })
+
+
+        })
+
+        </script>
+    </div>
+</body>
+</html>

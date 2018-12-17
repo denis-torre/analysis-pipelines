@@ -1,0 +1,106 @@
+Sample	Diff	Condition	Description
+sample_5_1	148	Control	Control cardiomyocytes
+sample_5_2	149	Control	Control cardiomyocytes
+sample_5_3	150	Control	Control cardiomyocytes
+sample_6_1	148	 + delta	PPAR delta agonist
+sample_6_2	149	 + delta	PPAR delta agonist
+sample_6_3	150	 + delta	PPAR delta agonist
+sample_6_4	152	 + delta	PPAR delta agonist
+sample_7_1	148	 + FA	Long Chain Fatty Acid (LCFA)
+sample_7_2	149	 + FA	added to media
+sample_7_3	150	 + FA	added to media
+sample_7_4	152	 + FA	added to media
+sample_8_1	148	 + FA + delta	LCFA + PPAR delta agonist
+sample_8_2	149	 + FA + delta	LCFA + PPAR delta agonist
+sample_8_3	150	 + FA + delta	LCFA + PPAR delta agonist
+sample_8_4	152	 + FA + delta	LCFA + PPAR delta agonist
+sample_9_1	148	 + alpha	PPAR alpha agonist
+sample_9_2	149	 + alpha	PPAR alpha agonist
+sample_9_3	150	 + alpha	PPAR alpha agonist
+sample_10_1	148	 + FA + alpha	LCFA + PPAR alpha agonist
+sample_10_2	149	 + FA + alpha	LCFA + PPAR alpha agonist
+sample_10_3	150	 + FA + alpha	LCFA + PPAR alpha agonist
+sample_11_1	148	 + gamma	PPAR gamma agonist
+sample_11_2	149	 + gamma	PPAR gamma agonist
+sample_11_3	150	 + gamma	PPAR gamma agonist
+sample_12_1	148	 + FA  + gamma	LCFA + PPAR gamma agonist
+sample_12_2	149	 + FA  + gamma	LCFA + PPAR gamma agonist
+sample_12_3	150	 + FA  + gamma	LCFA + PPAR gamma agonist
+sample_13_1	148	 + GSK	PPAR delta antagonist
+sample_13_2	149	 + GSK	PPAR delta antagonist
+sample_13_3	150	 + GSK	PPAR delta antagonist
+sample_14_1	ND	 + delta, 1d	PPAR delta agonist
+sample_14_2	160	 + delta, 1d	after 1 day of treatment
+sample_14_3	164	 + delta, 1d	after 1 day of treatment
+sample_15_1	ND	 + delta, 2d	PPAR delta agonist
+sample_15_2	160	 + delta, 2d	after 2 days of treatment
+sample_15_3	164	 + delta, 2d	after 2 days of treatment
+sample_16_1	ND	 + delta, 3d	PPAR delta agonist
+sample_16_2	160	 + delta, 3d	after 3 days of treatment
+sample_16_3	164	 + delta, 3d	after 3 days of treatment
+sample_17_1	156	D10, 7d	Control
+sample_17_2	160	D10, 7d	after 7 days
+sample_17_3	162	D10, 7d	after 7 days
+sample_18_1	156	 + delta, 7d	PPAR delta agonist
+sample_18_2	160	 + delta, 7d	after 7 days
+sample_18_3	162	 + delta, 7d	after 7 days
+sample_19_1	156	 + FA, 7d	LCFA 
+sample_19_2	160	 + FA, 7d	after 7 days
+sample_19_3	162	 + FA, 7d	after 7 days
+sample_20_1	156	 + FA + delta, 7d	LCFA + PPAR delta agonist
+sample_20_2	160	 + FA + delta, 7d	after 7 days 
+sample_20_3	162	 + FA + delta, 7d	after 7 days 
+sample_21_1	153	 + delta, 7d - phased	7 days PPAR delta agonist
+sample_21_3	155	 + delta, 7d - phased	21 days control media
+sample_21_4	156	 + delta, 7d - phased	21 days control media
+sample_22_1	153	 + FA + delta, 7d -phased	7 days LCFA + PPAR delta agonist
+sample_22_2	154	 + FA + delta, 7d -phased	21 days LCFA media
+sample_22_4	156	 + FA + delta, 7d -phased	21 days LCFA media
+sample_23_1	153	 + hiFA	High LCFA media
+sample_23_3	155	 + hiFA	High LCFA media
+sample_23_4	156	 + hiFA	High LCFA media
+sample_24_1	153	 + hiFA + delta	High LCFA media + PPAR delta agonsit
+sample_24_3	155	 + hiFA + delta	High LCFA media + PPAR delta agonsit
+sample_24_4	156	 + hiFA + delta	High LCFA media + PPAR delta agonsit
+sample_25_1	155	Lact Control	Lactate Metabolic Selection
+sample_25_2	156	Lact Control	Lactate Metabolic Selection
+sample_25_3	157	Lact Control	Lactate Metabolic Selection
+sample_26_1	155	Lact + delta	Lactate media + PPAR delta agonist
+sample_26_2	156	Lact + delta	Lactate media + PPAR delta agonist
+sample_26_3	157	Lact + delta	Lactate media + PPAR delta agonist
+sample_27_1	155	Lact + FA	Lactate media + LCFA
+sample_27_2	156	Lact + FA	Lactate media + LCFA
+sample_27_3	157	Lact + FA	Lactate media + LCFA
+sample_28_1	155	Lact + FA + delta	Lactate media + LCFA + PPAR delta agonist
+sample_28_2	156	Lact + FA + delta	Lactate media + LCFA + PPAR delta agonist
+sample_28_3	157	Lact + FA + delta	Lactate media + LCFA + PPAR delta agonist
+sample_29_1	153	AICAR	AICAR (AMPK acitvator)
+sample_29_3	155	AICAR	AICAR (AMPK acitvator)
+sample_29_4	156	AICAR	AICAR (AMPK acitvator)
+sample_30_1	153	AICAR + delta	AICAR + PPAR delta agonist
+sample_30_3	155	AICAR + delta	AICAR + PPAR delta agonist
+sample_30_4	156	AICAR + delta	AICAR + PPAR delta agonist
+sample_31_1	153	AICAR + FA	AICAR + LCFA Media
+sample_31_3	155	AICAR + FA	AICAR + LCFA Media
+sample_31_4	156	AICAR + FA	AICAR + LCFA Media
+sample_32_1	153	AICAR +FA + delta	AICAR + LCFA + PPAR delta agonist
+sample_32_3	155	AICAR +FA + delta	AICAR + LCFA + PPAR delta agonist
+sample_32_4	156	AICAR +FA + delta	AICAR + LCFA + PPAR delta agonist
+sample_33_1	152	EHT D10 Control	Engineered Heart Tissues (EHT) Control
+sample_33_2	153	EHT D10 Control	Engineered Heart Tissues (EHT) Control
+sample_33_4	157	EHT D10 Control	Engineered Heart Tissues (EHT) Control
+sample_34_1	152	EHT + delta	EHT - PPAR delta agonist
+sample_34_3	155	EHT + delta	EHT - PPAR delta agonist
+sample_34_4	157	EHT + delta	EHT - PPAR delta agonist
+sample_35_1	152	EHT + FA	EHT - LCFA 
+sample_35_3	155	EHT + FA	EHT - LCFA 
+sample_35_4	157	EHT + FA	EHT - LCFA 
+sample_36_1	152	EHT + FA + delta	EHT - LCFA + PPAR delta agonist
+sample_36_2	153	EHT + FA + delta	EHT - LCFA + PPAR delta agonist
+sample_36_3	155	EHT + FA + delta	EHT - LCFA + PPAR delta agonist
+sample_37_1	152	EHT + GSK	EHT - PPAR delta antagonist
+sample_37_2	153	EHT + GSK	EHT - PPAR delta antagonist
+sample_37_4	157	EHT + GSK	EHT - PPAR delta antagonist
+sample_38_1	158	EBs	Embryoid bodies
+sample_38_2	159	EBs	Embryoid bodies
+sample_38_3	160	EBs	Embryoid bodies

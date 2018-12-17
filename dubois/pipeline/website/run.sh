@@ -1,0 +1,1 @@
+docker build -t maayanlab/dubois .; docker run -it -p 5000:5000 maayanlab/dubois;
