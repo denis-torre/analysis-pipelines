@@ -9,18 +9,35 @@
 #############################################
 ##### 1. General support #####
 source('/Users/denis/Documents/Projects/scripts/Support.R')
+library(limma)
 
 ##### 2. Other libraries #####
 
 #######################################################
 #######################################################
-########## S1. 
+########## S1. IDAT Management
 #######################################################
 #######################################################
 
 #############################################
-########## 1. 
+########## 1. Read IDAT
 #############################################
+
+read_idat <- function(idat_file, bgx_file, outfile) {
+    
+    # Read Idat
+    idat_data <- read.idat(idat_file, bgx_file)
+
+    # Prepare dataframe
+    idat_dataframe <- idat_data$genes
+    idat_dataframe$expression <- idat_data$E
+
+    # Write
+    write.table(idat_dataframe, outfile, quote=FALSE, sep='\t')
+
+}
+
+
 
 
 #######################################################

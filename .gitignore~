@@ -1,4 +1,0 @@
-*.dir
-*.sqlite
-*.pyc
-*-checkpoint.ipynb
