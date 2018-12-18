@@ -12,7 +12,7 @@
 #############################################
 ##### 1. Python modules #####
 from ruffus import *
-import sys, os
+import sys, os, json, glob
 import pandas as pd
 from rpy2.robjects import r, pandas2ri
 pandas2ri.activate()
@@ -60,11 +60,72 @@ def alignReads(infiles, outfile):
 		print('Error doing {}.'.format(outfile))
 
 #############################################
-########## 2. Merge data
+########## 2. Merge JSON
 #############################################
 
+@merge('s1-kallisto.dir/*/run_info.json',
+       's2-expression.dir/run_info.txt')
+
+def mergeInfo(infiles, outfile):
+
+	# Initialize result dict
+	results = {}
+
+	# Loop through infiles
+	for infile in infiles:
+
+		# Get sample name
+		sample_name = infile.split('/')[1]
+
+		# Add results
+		with open(infile) as openfile:
+			results[sample_name] = json.load(openfile)
+
+	# Convert to dataframe
+	result_dataframe = pd.DataFrame(results).T.rename_axis('sample_name')
+
+	# Write
+	result_dataframe.to_csv(outfile, sep='\t')
+
 #############################################
-########## 3. Split data
+########## 3. Merge counts
+#############################################
+
+@merge(['s1-kallisto.dir/*/abundance.tsv',
+	   'rawdata/ensembl/mart_export.txt'],
+	   's2-expression.dir/kallisto-counts.txt')
+
+def mergeExpression(infiles, outfile):
+
+	# Split infiles
+	annotation_file = infiles.pop()
+	abundance_files = infiles
+
+	# Read data
+	dataframes = []
+	for infile in abundance_files:
+		sample_dataframe = pd.read_table(infile)
+		sample_dataframe['sample'] = infile.split('/')[1].split('_S')[0]
+		dataframes.append(sample_dataframe)
+	concatenated_dataframe = pd.concat(dataframes)
+
+	# Read annotation
+	annotation_dataframe = pd.read_table(annotation_file)
+
+	# Cast data
+	expression_dataframe = concatenated_dataframe.pivot_table(index='target_id', columns='sample', values='est_counts')
+
+	# Merge
+	merged_dataframe = expression_dataframe.merge(annotation_dataframe, left_index=True, right_on='Transcript stable ID version', how='inner')
+
+	# Group counts to gene level
+	result_dataframe = merged_dataframe.drop(['Transcript stable ID version', 'Gene type'], axis=1).groupby('Gene name').sum().astype(int).rename_axis('gene_symbol')
+
+	# Write
+	result_dataframe.to_csv(outfile, sep='\t')
+
+#############################################
+########## 4. Split data
 #############################################
 
 @follows(mkdir('s2-expression.dir'))
