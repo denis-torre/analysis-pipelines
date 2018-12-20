@@ -12,8 +12,9 @@
 #############################################
 ##### 1. Python modules #####
 from ruffus import *
-import sys, os
+import sys, os, itertools
 import pandas as pd
+from functools import reduce
 from rpy2.robjects import r, pandas2ri
 pandas2ri.activate()
 
@@ -28,6 +29,9 @@ import Mcgrath as P
 ########## 2. General Setup
 #############################################
 ##### 1. Variables #####
+# Id columns
+id_cols = ['Probe_Id', 'Array_Address_Id', 'Status', 'Symbol']
+sample_metadata = 'rawdata/conditions_correct.csv'
 
 ##### 2. R Connection #####
 r.source('pipeline/scripts/mcgrath.R')
@@ -60,7 +64,7 @@ def readIdat(infiles, outfile):
 
 @follows(mkdir('s2-expression.dir'))
 
-@merge([readIdat, 'rawdata/conditions_correct.csv'],
+@merge([readIdat, sample_metadata],
        's2-expression.dir/mcgrath-rawdata.txt')
 
 def mergeData(infiles, outfile):
@@ -69,38 +73,74 @@ def mergeData(infiles, outfile):
     sample_metadata_dataframe = pd.read_csv(infiles.pop())
 
     # Initialize results
-    results = []
+    dataframes = []
 
-    # Loop through infiles
+    # Loop through infiles 
     for infile in infiles:
 
         # Read dataframe
-        sample_dataframe = pd.read_table(infile)
+        sample_dataframe = pd.read_table(infile)[['Symbol', 'expression']]
 
-        # Add sample name
-        sample_dataframe['sample_name'] = os.path.basename(infile)[:-len(".txt")]
+        # Add sample
+        sample_dataframe['sample'] = os.path.basename(infile)[:-len(".txt")]
 
         # Append
-        results.append(sample_dataframe)
+        dataframes.append(sample_dataframe)
 
     # Rename
     rename_dict = {rowData['IDATfile'][:-len('.idat')]: rowData['Samples'] for index, rowData in sample_metadata_dataframe.iterrows()}
 
-    # Concatenate and cast
-    expression_dataframe = pd.concat(results).pivot_table(index='Symbol', columns='sample_name', values='expression').rename(columns=rename_dict)
+    # Merge
+    # merged_dataframe = reduce(lambda x, y: pd.merge(x, y, on='Symbol'), dataframes).rename(columns=rename_dict)[id_cols+list(rename_dict.values())]
+    merged_dataframe = pd.concat(dataframes).pivot_table(index='Symbol', columns='sample', values='expression').rename(columns=rename_dict)[list(rename_dict.values())]
 
     # Write
-    expression_dataframe.to_csv(outfile, sep='\t')
+    merged_dataframe.to_csv(outfile, sep='\t')
+
+#############################################
+########## 3. Normalize
+#############################################
+
+@transform(mergeData,
+           suffix('rawdata.txt'),
+           'quantile.txt')
+
+def normalizeData(infile, outfile):
+
+    # Read metadata
+    r.quantile_normalization(infile, outfile)
 
 #######################################################
 #######################################################
-########## S. 
+########## S2. Differential Expression
 #######################################################
 #######################################################
 
 #############################################
-########## . 
+########## 1. Run limma
 #############################################
+
+@follows(mkdir('s3-differential_expression.dir'))
+
+@subdivide(normalizeData,
+           formatter(),
+           add_inputs(sample_metadata),
+           's3-differential_expression.dir/*-limma.txt',
+           's3-differential_expression.dir/')
+
+def runLimma(infiles, outfiles, outfileRoot):
+
+    # Get comparisons
+    comparisons = (['Control', 'Wounded'], ['Control', 'Normal'], ['Normal', 'Wounded'])
+
+    # Loop through comparisons
+    for comparison in comparisons:
+
+        # Outfile
+        outfile = '{outfileRoot}{comparison[0]}_vs_{comparison[1]}-limma.txt'.format(**locals())
+
+        # Run Limma
+        r.run_limma(expression_file=infiles[0], metadata_file=infiles[1], outfile=outfile, comparison=comparison)
 
 
 ##################################################
@@ -108,5 +148,7 @@ def mergeData(infiles, outfile):
 ########## Run pipeline
 ##################################################
 ##################################################
+# with open('pipeline/pipeline.png', 'wb') as openfile:
+#       pipeline_printout_graph(openfile, output_format='png')
 pipeline_run([sys.argv[-1]], multiprocess=1, verbose=1)
 print('Done!')
