@@ -206,7 +206,7 @@ def processMetadata(infile, outfile):
 #############################################
 
 def normalizeJobs():
-	for normalization in ['logCPM']:
+	for normalization in ['quantile', 'logCPM']:
 		yield ('s2-expression.dir/dubois-est_counts.txt', 's2-expression.dir/dubois-{}.txt'.format(normalization), normalization)
 
 @follows(mergeExpression)
@@ -428,5 +428,7 @@ def toPlotJson(infile, outfile):
 ########## Run pipeline
 ##################################################
 ##################################################
+with open('pipeline/pipeline.png', 'wb') as openfile:
+      pipeline_printout_graph(openfile, output_format='png')
 pipeline_run([sys.argv[-1]], multiprocess=3, verbose=1)
 print('Done!')
