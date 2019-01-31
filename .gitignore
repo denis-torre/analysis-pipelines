@@ -8,3 +8,7 @@ rawdata
 dubois/pipeline/website/*.json
 dubois/pipeline/notebooks
 dubois/pipeline/presentations
+trash
+archana/pipeline/notebooks/plots
+*PPI.xlsx
+exon.*
