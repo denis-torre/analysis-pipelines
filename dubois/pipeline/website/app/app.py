@@ -70,8 +70,14 @@ def index():
 	# Read samples
 	print(os.getcwd())
 	sample_dataframe = pd.read_table('app/static/dubois-metadata.txt')
+	conditions = sample_dataframe['Condition'].unique()
+	sample_conditions = ["Control", " + delta", " + delta, 1d", " + delta, 2d", " + delta, 3d", " + delta, 7d"]
+	conditions_dict = {
+		'show': sample_conditions,
+		'hide': list(set(conditions)-set(sample_conditions))
+	}
 	print(sample_dataframe)
-	return render_template('index.html', sample_dataframe=sample_dataframe)
+	return render_template('index.html', sample_dataframe=sample_dataframe, conditions_dict=conditions_dict)
 
 if __name__ == "__main__":
 	app.run(debug=True, host='0.0.0.0')

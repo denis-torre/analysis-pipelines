@@ -23,6 +23,17 @@
             padding-top: 175px;
             font-size: 30pt;
         }
+        .sortable-option {
+            background-color: aliceblue;
+            list-style-type: none;
+            border: 1px solid lightblue;
+            cursor: pointer;
+        }
+        .sortable-list {
+            min-height: 500px;
+            border: 1px solid lightgrey;
+            padding: 0px;
+        }
     </style>
 </head>
 <body class="bg-secondary h-100">
@@ -56,6 +67,22 @@
             </div>
         </div>
 
+        <!-- Reorder Samples -->
+        <div class="mt-4">Drag and drop the conditions below to reorder and toggle them from the plot.</div>
+        <div class="row mt-3">
+            {% for group, conditions in conditions_dict.items() %}
+                <div class="col-6">
+                    <div class="mb-2 text-center">{{ group.title() }}</div>
+                    <ul id="{{group}}" class="text-center sortable-list">
+                        {% for condition in conditions %}
+                            <li class="sortable-option">{{ condition }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            {% endfor %}
+            </div>
+        </div>
+
         <!-- Sample Summary -->
         <div class="row">
             <div class="col-12"></div>
@@ -67,6 +94,7 @@
         <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.3/umd/popper.min.js" integrity="sha384-ZMP7rVo3mIykV+2+9J3UJ46jBk0WLaUAdn689aCwoqbBJiSnjAK/l8WvCWPIPm49" crossorigin="anonymous"></script>
         <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/js/bootstrap.min.js" integrity="sha384-ChfqqxuZUCnJSK3+MXmPNIyE6ZbWh2IMqE241rYiqJxyMiZ6OW/JmZQ5stwEULTy" crossorigin="anonymous"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/selectize.js/0.12.4/js/standalone/selectize.min.js"></script>
+        <script src="{{ url_for('static', filename='Sortable.min.js') }}"></script>
         <script>
 
         $(document).ready(function () {
@@ -113,9 +141,10 @@
                     var data = [];
 
                     // Loop through conditions
-                    $.each(expression[gene_symbol], function(group, values) {
+                    $.each($('#show li'), function(index, elem) {
+                        var group = $(elem).html();
                         data.push({
-                            y: values,
+                            y: expression[gene_symbol][group],
                             type: 'box',
                             name: group
                         })
@@ -154,6 +183,27 @@
 
             // Plot
             boxplot('A1BG');
+
+            //////////////////////////////////
+            /// Sortable
+            //////////////////////////////////
+
+            new Sortable(show, {
+                group: 'shared',
+                onChange: function(evt) {
+                    var gene = $('.gene-select').val()
+                    if (gene) {
+                        boxplot(gene);
+                    } else {
+                        boxplot('A1BG');
+                    }
+                }
+            })
+
+            new Sortable(hide, {
+                group: 'shared'
+            })
+
 
             // Load
             // boxplot_selectize.on('load', function(value) {

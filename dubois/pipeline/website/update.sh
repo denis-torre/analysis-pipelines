@@ -1,1 +1,1 @@
-docker build -t maayanlab/dubois .; docker push maayanlab/dubois;
+docker build -t maayanlab/dubois:v2 .; docker push maayanlab/dubois:v2;

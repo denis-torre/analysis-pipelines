@@ -14,19 +14,22 @@
 from ruffus import *
 import sys, glob, os, json
 import pandas as pd
-# from rpy2.robjects import r, pandas2ri
+import numpy as np
+from rpy2.robjects import r, pandas2ri
 # pandas2ri.activate()
 
 ##### 2. Custom modules #####
 # Pipeline running
 # sys.path.append('/Users/denis/Documents/Projects/scripts')
 # sys.path.append('pipeline/scripts')
-sys.path.append('/Users/denis/Documents/Projects/jupyter-notebook/biojupies-plugins/library/core_scripts/normalize')
-import normalize as N
-sys.path.append('/Users/denis/Documents/Projects/jupyter-notebook/biojupies-plugins/library/core_scripts/signature')
-import signature as S
+# sys.path.append('/Users/denis/Documents/Projects/jupyter-notebook/biojupies-plugins/library/core_scripts/normalize')
+# import normalize as N
+# sys.path.append('/Users/denis/Documents/Projects/jupyter-notebook/biojupies-plugins/library/core_scripts/signature')
+# import signature as S
 # import Support3 as S
 # import Dubois as P
+sys.path.append('../../jupyter-notebook/biojupies-plugins/library/analysis_tools/enrichr/')
+import enrichr
 
 #############################################
 ########## 2. General Setup
@@ -34,7 +37,7 @@ import signature as S
 ##### 1. Variables #####
 
 ##### 2. R Connection #####
-# r.source('pipeline/scripts/dubois.R')
+r.source('pipeline/scripts/dubois.R')
 
 #######################################################
 #######################################################
@@ -267,37 +270,45 @@ def filterGenes(infile, outfile, outfileRoot):
 			count_dataframe_filtered.to_csv(outfile, sep='\t')
 
 #############################################
-########## 5. Normalize Expression
+########## 5. Median Expression
 #############################################
 
-@follows(mkdir('s2-expression.dir/kallisto/normalized'))
-@follows(mkdir('s2-expression.dir/star/normalized'))
+@transform('s2-expression.dir/kallisto/*-counts.txt',
+		   suffix('-counts.txt'),
+		   add_inputs('rawdata/metadata/dubois-metadata.txt'),
+		   '-median_group_logcpm.txt')
 
-@subdivide(glob.glob('s2-expression.dir/kallisto/*-counts.txt'),
-		   regex(r'(.*)/(.*)-counts.txt'),
-		   r'\1/normalized/\2-*.txt',
-		   r'\1/normalized/\2-')
+def getMedianLogcpm(infiles, outfile):
 
-def normalizeData(infile, outfiles, outfileRoot):
+	# Get counts
+	count_dataframe = pd.read_table(infiles[0], index_col='gene_symbol')
 
-	# Get expression
-	count_dataframe = pd.read_table(infile, index_col='gene_symbol')
+	# Get logCPM
+	logcpm_dataframe = np.log10((count_dataframe/count_dataframe.sum())*10**6+1)
+	round(logcpm_dataframe, ndigits=3).to_csv('dubois-logcpm.txt', sep='\t')
 
-	# Loop through normalization
-	for normalization in ['logCPM', 'quantile']:
+	# Melt
+	melted_dataframe = pd.melt(logcpm_dataframe.reset_index(), id_vars='gene_symbol', var_name='Sample', value_name='logCPM')
 
-		# Normalize
-		normalized_dataframe = getattr(N, normalization)({'rawdata': count_dataframe})
+	# Get metadata
+	metadata_dataframe = pd.read_table(infiles[1])
 
-		# Get outfile
-		outfile = '{outfileRoot}{normalization}.txt'.format(**locals())
+	# Merge
+	merged_dataframe = melted_dataframe.merge(metadata_dataframe, on='Sample')
 
-		# Write
-		normalized_dataframe.to_csv(outfile, sep='\t')
+	# Group
+	median_dataframe = merged_dataframe.groupby(['gene_symbol', 'Condition'])['logCPM'].median().rename('logCPM').reset_index()
+
+	# Cast
+	cast_dataframe = median_dataframe.pivot(index='gene_symbol', columns='Condition', values='logCPM')
+	cast_dataframe = round(cast_dataframe, ndigits=3)
+
+	# Write
+	cast_dataframe.to_csv(outfile, sep='\t')
 
 #######################################################
 #######################################################
-########## S3. Mean Expression
+########## S3. PCA
 #######################################################
 #######################################################
 
@@ -337,104 +348,209 @@ def normalizeData(infile, outfiles, outfileRoot):
 # 	with open(outfile, 'w') as openfile:
 # 		openfile.write(json.dumps(expression_dict))
 
-# #############################################
-# ########## 2. Get Genes
-# #############################################
+#######################################################
+#######################################################
+########## S4. limma
+#######################################################
+#######################################################
 
-# @files(mergeKallistoExpression,
-# 	   's3-mean_expression.dir/genes.json')
+#############################################
+########## 1. Get Differential Expression
+#############################################
 
-# def getGenes(infile, outfile):
+def differentialJobs():
+	metadata_series = pd.read_table('rawdata/metadata/dubois-metadata.txt').groupby('Condition')['Sample'].apply(tuple)
+	control_samples = metadata_series.pop('Control')
+	for group_name, perturbed_samples in metadata_series.items():
+		group_name = group_name.replace(' ', '')
+		for aligner in ['kallisto']:
+			yield ('s2-expression.dir/{aligner}/nonbatch/{aligner}-counts.txt'.format(**locals()), 's3-limma.dir/{aligner}/{group_name}-{aligner}-limma.txt'.format(**locals()), group_name, control_samples, perturbed_samples)
 
-# 	# Get expression
-# 	expression_dataframe = pd.read_table(infile[0])
+@follows(mkdir('s3-limma.dir/star'))
+@follows(mkdir('s3-limma.dir/kallisto/nonbatch'))
 
-# 	# Get results
-# 	gene_dict = [{'gene_symbol': x} for x in expression_dataframe['gene_symbol']]
+@files(differentialJobs)
 
-# 	# Write
-# 	with open(outfile, 'w') as openfile:
-# 		openfile.write(json.dumps(gene_dict))
+def runDifferentialExpression(infile, outfile, group_name, control_samples, perturbed_samples):
 
-# #############################################
-# ########## 3. Get Conditions
-# #############################################
+	# Print
+	print('Doing {}...'.format(outfile))
 
-# @files(processMetadata,
-# 	   's3-mean_expression.dir/conditions.json')
+	# Read metadata
+	count_dataframe = pd.read_table(infile, index_col='gene_symbol').rename_axis('index')
 
-# def getConditions(infile, outfile):
+	# Run analysis
+	signature_dataframe = S.limma({'rawdata': count_dataframe}, control_samples, perturbed_samples)
 
-# 	# Get expression
-# 	metadata_dataframe = pd.read_table(infile)
+	# Add group name
+	signature_dataframe['group_name'] = group_name
 
-# 	# Get results
-# 	gene_dict = [{'condition': x} for x in metadata_dataframe['Condition'].unique()]
+	# Write
+	signature_dataframe.to_csv(outfile, sep='\t')
 
-# 	# Write
-# 	with open(outfile, 'w') as openfile:
-# 		openfile.write(json.dumps(gene_dict))
+#############################################
+########## 2. Batch differential expression
+#############################################
 
-# #######################################################
-# #######################################################
-# ########## S4. limma
-# #######################################################
-# #######################################################
+def differentialJobs2():
+	metadata_series = pd.read_table('rawdata/metadata/dubois-metadata.txt').groupby('Condition')['Sample'].apply(tuple)
+	control_samples = metadata_series.pop('Control')
+	for group_name, perturbed_samples in metadata_series.items():
+		group_name = group_name.replace(' ', '')
+		for aligner in ['kallisto']:
+			yield ('s2-expression.dir/{aligner}/{aligner}-counts.txt'.format(**locals()), 's3-limma.dir/{aligner}/{group_name}-{aligner}-batch-limma.txt'.format(**locals()), group_name, control_samples, perturbed_samples)
 
-# #############################################
-# ########## 1. Get Differential Expression
-# #############################################
+@follows(mkdir('s3-limma.dir/kallisto/batch'))
 
-# def differentialJobs():
-# 	metadata_series = pd.read_table('s2-expression.dir/dubois-metadata.txt').groupby('Condition')['Sample'].apply(tuple)
-# 	control_samples = metadata_series.pop('Control')
-# 	for group_name, perturbed_samples in metadata_series.items():
-# 		group_name = group_name.replace(' ', '')
-# 		yield ('s2-expression.dir/dubois-est_counts.txt', 's4-limma.dir/{}-limma.txt'.format(group_name), group_name, control_samples, perturbed_samples)
+@subdivide('s2-expression.dir/kallisto/kallisto-counts.txt',
+           regex(r'.*/(.*)-counts.txt'),
+           add_inputs('rawdata/metadata/dubois-metadata.txt', 'rawdata/metadata/dubois-comparisons.txt'),
+           r's3-limma.dir/\1/.*.txt',
+           r's3-limma.dir/\1/batch/\1-')
 
-# @follows(mkdir('s4-limma.dir'))
-# @files(differentialJobs)
+def runBatchDifferentialExpression(infiles, outfiles, outfileRoot):
 
-# def runDifferentialExpression(infile, outfile, group_name, control_samples, perturbed_samples):
+	# Fix infiles
+	infiles = list(infiles)
 
-# 	# Print
-# 	print('Doing {}...'.format(outfile))
+	# Comparison file
+	comparison_dataframe = pd.read_table(infiles.pop())
 
-# 	# Read metadata
-# 	count_dataframe = pd.read_table(infile, index_col='gene_symbol').rename_axis('index')
+	# Loop
+	for index, groups in comparison_dataframe.iterrows():
 
-# 	# Run analysis
-# 	signature_dataframe = S.limma({'rawdata': count_dataframe}, control_samples, perturbed_samples)
+		# Outfile
+		outfile = '{outfileRoot}{control_condition}_vs_{perturbation_condition}-batch.txt'.format(**locals(), **groups)
 
-# 	# Add group name
-# 	signature_dataframe['group_name'] = group_name
+		# Skip if exists
+		if not os.path.exists(outfile):
 
-# 	# Write
-# 	signature_dataframe.to_csv(outfile, sep='\t')
+			# Print
+			print('Doing {}...'.format(outfile))
 
-# #######################################################
-# #######################################################
-# ########## S5. Merge results
-# #######################################################
-# #######################################################
+			# Run limma
+			r.run_limma(
+				count_file=infiles[0],
+				metadata_file=infiles[1],
+				control_condition=groups['control_condition'],
+				perturbation_condition=groups['perturbation_condition'],
+				outfile=outfile
+			)
 
-# #############################################
-# ########## 1. Merge
-# #############################################
+#############################################
+########## 3. Merge limma
+#############################################
 
-# @follows(mkdir('s5-differential_expression.dir'))
+@merge('s3-limma.dir/kallisto/batch/*.txt',
+	   's3-limma.dir/kallisto/limma-batch-merged.txt')
 
+def mergeLimma(infiles, outfile):
 
-# @merge(runDifferentialExpression,
-# 	   's5-differential_expression.dir/limma-merged.txt')
+	# Data
+	data = []
 
-# def mergeDifferentialExpression(infiles, outfile):
+	# Loop
+	for infile in infiles:
+		
+		# Groups
+		control, perturbation = os.path.basename(infile).split('-')[1].split('_vs_')
+		
+		# Read
+		dataframe = pd.read_table(infile)
+		dataframe['control_condition'] = control
+		dataframe['perturbation_condition'] = perturbation
+		
+		# Append
+		data.append(dataframe)
 
-# 	# Concatenate
-# 	merged_dataframe = pd.concat([pd.read_table(x) for x in infiles])
+	# Convert
+	dataframe_concat = pd.concat(data).drop(['t', 'B'], axis=1)
 
-# 	# Write
-# 	merged_dataframe.to_csv(outfile, sep='\t', index=False)
+	# Round
+	for col in ['logFC', 'AveExpr']:
+		dataframe_concat[col] = [round(x, ndigits=3) for x in dataframe_concat[col]]
+
+	# Format
+	for col in ['P.Value', 'adj.P.Val']:
+		dataframe_concat[col] = ['{:.2e}'.format(x) for x in dataframe_concat[col]]
+
+	# Write
+	dataframe_concat.to_csv(outfile, index=False, sep='\t')
+
+#######################################################
+#######################################################
+########## S4. Enrichr
+#######################################################
+#######################################################
+
+#############################################
+########## 1. Get gene sets
+#############################################
+
+@follows(mkdir('s4-enrichr.dir/listids'))
+
+@transform('s3-limma.dir/*/batch/*.txt',
+		   regex(r'.*/(.*)-batch.txt'),
+		   r's4-enrichr.dir/listids/\1-listids.json')
+
+def getEnrichrIds(infile, outfile):
+
+	# Print
+	print('Doing {}...'.format(outfile))
+	control, perturbation = os.path.basename(infile).split('-')[1].split('_vs_')
+
+	# Read dataframe
+	limma_dataframe = pd.read_table(infile, index_col='gene_symbol').sort_values('t', ascending=False)
+
+	# Get N
+	n = 500
+
+	# Get genesets
+	listids = {
+		'up': enrichr.submit_enrichr_geneset(limma_dataframe.index[:n].tolist(), 'Genes upregulated in {perturbation} condition (vs {control})'.format(**locals())),
+		'down': enrichr.submit_enrichr_geneset(limma_dataframe.index[-n:].tolist(), 'Genes downregulated in {perturbation} condition (vs {control})'.format(**locals()))
+	}
+
+	# Write
+	with open(outfile, 'w') as openfile:
+		json.dump(listids, openfile, indent=4)
+
+#############################################
+########## 2. Add Enrichr Links
+#############################################
+
+@merge(getEnrichrIds,
+	   's4-enrichr.dir/enrichr-results.xls')
+
+def mergeIds(infiles, outfile):
+
+	# Data
+	data = []
+
+	# Loop
+	for infile in infiles:
+		
+		# Groups
+		control, perturbation = os.path.basename(infile).split('-')[1].split('_vs_')
+		
+		# Read
+		with open(infile) as openfile:
+			ids = json.load(openfile)
+			
+		# Append
+		data.append({
+			'control': control,
+			'perturbation': perturbation,
+			'enrichr_up': 'http://amp.pharm.mssm.edu/Enrichr/enrich?dataset='+ids['up']['shortId'],
+			'enrichr_down': 'http://amp.pharm.mssm.edu/Enrichr/enrich?dataset='+ids['down']['shortId']
+		})
+
+	# Convert
+	dataframe = pd.DataFrame(data)[['control', 'perturbation', 'enrichr_up', 'enrichr_down']]
+
+	# write
+	dataframe.to_excel(outfile, index=False)
+
 
 # #############################################
 # ########## 2. Table JSON
