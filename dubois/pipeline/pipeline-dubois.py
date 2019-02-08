@@ -30,6 +30,8 @@ from rpy2.robjects import r, pandas2ri
 # import Dubois as P
 sys.path.append('../../jupyter-notebook/biojupies-plugins/library/analysis_tools/enrichr/')
 import enrichr
+sys.path.append('../alignment/pipeline')
+import align
 
 #############################################
 ########## 2. General Setup
@@ -95,26 +97,12 @@ def runStar(infiles, outfile):
 	if not os.path.exists(outfile):
 		os.makedirs(outfile)
 
-	# Align
+	# Read files
+	readFiles = '{0},{2} {1},{3}'.format(*infiles)
+
+    # Align
 	print('Doing {}...'.format(outfile))
-	try:
-		command = ''' STAR \
-			--genomeDir /Users/denis/Data/star/human/genomeDir  \
-			--outFileNamePrefix {outfile}  \
-			--readFilesIn {infiles[0]},{infiles[2]} {infiles[1]},{infiles[3]}  \
-			--readFilesCommand gunzip -c \
-			--quantMode GeneCounts \
-			--limitBAMsortRAM 10000000000  \
-			--limitIObufferSize 50000000 \
-			--outSAMstrandField intronMotif \
-			--outFilterIntronMotifs RemoveNoncanonical  \
-			--outSAMtype BAM SortedByCoordinate  \
-			--outReadsUnmapped Fastx \
-			--runThreadN 5
-		'''.format(**locals())
-		os.system(command)
-	except:
-		print('Error doing {}.'.format(outfile))
+	align.align(readFiles, outfile, method='STAR', genome='Homo_sapiens.GRCh38', threads=3)
 
 #######################################################
 #######################################################
@@ -231,43 +219,17 @@ def mergeStarExpression(infiles, outfile):
 	# Write
 	result_dataframe.to_csv(outfile, sep='\t')
 
+#######################################################
+#######################################################
+########## S3.  Normalize and Collapse
+#######################################################
+#######################################################
+
 #############################################
-########## 4. Filter
+########## 1. Normalize
 #############################################
 
-@follows(mkdir('s2-expression.dir/kallisto/filtered'))
-@follows(mkdir('s2-expression.dir/star/filtered'))
 
-@subdivide(glob.glob('s2-expression.dir/kallisto/*-counts.txt'),
-		   regex(r'(.*)/(.*).txt'),
-		   r'\1/filtered/\2-*.txt',
-           r'\1/filtered/\2')
-
-def filterGenes(infile, outfile, outfileRoot):
-
-	# Read dataframe
-	count_dataframe = pd.read_table(infile, index_col='gene_symbol')
-
-	# Get CPM
-	cpm_dataframe = (count_dataframe/count_dataframe.sum())*10**6
-
-	# Loop
-	for value in [0, .5, 1, 3, 5, 10]:
-		for percentage in [0, .1, .25]:
-
-			# Get genes
-			genes_bool = ((cpm_dataframe >= value).mean(axis=1) >= percentage)
-			genes_filtered = genes_bool.index[genes_bool]
-
-			# Filter
-			count_dataframe_filtered = count_dataframe.reindex(genes_filtered)
-
-			# Outfile
-			outfile = '{outfileRoot}-{value}cpm-{percentage}pct.txt'.format(**locals())
-			print('Doing {}...'.format(outfile))
-
-			# Write
-			count_dataframe_filtered.to_csv(outfile, sep='\t')
 
 #############################################
 ########## 5. Median Expression
@@ -305,48 +267,6 @@ def getMedianLogcpm(infiles, outfile):
 
 	# Write
 	cast_dataframe.to_csv(outfile, sep='\t')
-
-#######################################################
-#######################################################
-########## S3. PCA
-#######################################################
-#######################################################
-
-#############################################
-########## 1. Collapse Expression
-#############################################
-
-# @follows(mkdir('s3-mean_expression.dir'))
-
-# @transform(normalizeData,
-# 		   regex(r'.*/dubois-(.*).txt'),
-# 		   add_inputs(processMetadata),
-#            r's3-mean_expression.dir/dubiois-grouped_\1.json')
-
-# def collapseExpression(infiles, outfile):
-
-# 	# Get expression
-# 	expression_dataframe = pd.read_table(infiles[0])
-
-# 	# Read metadata
-# 	metadata_dataframe = pd.read_table(infiles[1])
-
-# 	# Merge
-# 	merged_dataframe = pd.melt(expression_dataframe, id_vars='gene_symbol').merge(metadata_dataframe, left_on='variable', right_on='Sample').rename(columns={'variable': 'sample', 'value': 'logCPM'}).drop('Diff', axis=1)
-
-# 	# Group
-# 	grouped_dataframe = merged_dataframe.groupby(['gene_symbol', 'Condition'])['logCPM'].apply(list).rename('logCPM').to_frame()
-
-# 	# Initialize dictionary
-# 	expression_dict = {x: {} for x in expression_dataframe['gene_symbol']}
-
-# 	# Loop
-# 	for index, rowData in grouped_dataframe.iterrows():
-# 		expression_dict[index[0]][index[1]] = rowData['logCPM']
-
-# 	# Write
-# 	with open(outfile, 'w') as openfile:
-# 		openfile.write(json.dumps(expression_dict))
 
 #######################################################
 #######################################################
