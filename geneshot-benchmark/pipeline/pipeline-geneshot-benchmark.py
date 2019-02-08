@@ -13,7 +13,7 @@
 ##### 1. Python modules #####
 from ruffus import *
 from ruffus.combinatorics import *
-import sys, glob, os
+import sys, glob, os, json
 import numpy as np
 import pandas as pd
 import scipy.stats as ss
@@ -35,7 +35,7 @@ import GeneshotBenchmark as P
 ########## 2. General Setup
 #############################################
 ##### 1. Variables #####
-libraries = glob.glob('libraries.dir/*.txt')
+libraries = glob.glob('rawdata.dir/libraries/*.txt')
 
 ##### 2. R Connection #####
 r.source('pipeline/scripts/geneshot-benchmark.R')
@@ -58,7 +58,7 @@ def reverseGMT(gmt):
     reverse_gmt = {gene_symbol: [key for key, value in rowData.items() if value] for gene_symbol, rowData in gmt_dataframe.iterrows()}
     return reverse_gmt
 
-# Filter score dataframe
+# Filter score dataframe by intersecting genes in GMT
 def filterScores(average_score_dataframe, gmt):
     gmt_genes = set([s for l in gmt.values() for s in l])
     common_genes = gmt_genes.intersection(set(average_score_dataframe.index))
@@ -74,43 +74,86 @@ def zscoreDF(df): return ((df.T - df.T.mean())/df.T.std()).T
 #######################################################
 
 #############################################
-########## 1. Fraction
+########## 1. Prepare Matrices
 #############################################
 
-def normalizeJobs():
-    for method in []:#['raw', 'fraction', 'zscore', 'random']:
-        yield ['feather.dir/list_off_co.feather', 's1-normalized.dir/{}.feather'.format(method)]
+def matrixJobs():
 
-@follows(mkdir('s1-normalized.dir'))
+    # Read JSON
+    with open('rawdata.dir/matrices.json', 'r') as openfile:
+        matrices = json.load(openfile)
 
-@files(normalizeJobs)
+    # Loop
+    for matrix in matrices:
+        yield ('rawdata.dir/matrices/{basename}'.format(**matrix), 's1-matrices.dir/{distance_name}.feather'.format(**matrix), matrix['distance_name'])
+
+@follows(mkdir('s1-matrices.dir'))
+@files(matrixJobs)
+
+def prepareMatrices(infile, outfile, distance_name):
+
+    # Print
+    print('Doing {}...'.format(outfile))
+
+    # Read data
+    similarity_dataframe = pd.read_table(infile)
+
+    # Rename axis
+    if distance_name == 'archs':
+        similarity_dataframe = similarity_dataframe.rename_axis('gene_symbol').reset_index()
+    elif distance_name == 'generif':
+        similarity_dataframe = similarity_dataframe.drop(similarity_dataframe.columns[-1], axis=1)
+        similarity_dataframe.columns = similarity_dataframe.index.astype(str)
+        similarity_dataframe = similarity_dataframe.rename_axis('gene_symbol').reset_index()
+    else:
+        similarity_dataframe = similarity_dataframe.rename(columns={'Unnamed: 0': 'gene_symbol'})
+
+    # Write
+    similarity_dataframe.to_feather(outfile)
+
+#############################################
+########## 2. Normalize
+#############################################
+
+@transform(prepareMatrices,
+           suffix('.feather'),
+           '_zscore.feather')
 
 def normalizeCounts(infile, outfile):
 
     # Read data
-    enrichr_dataframe = pd.read_feather(infile).set_index('gene_symbol')
+    similarity_dataframe = pd.read_feather(infile).set_index('gene_symbol')
 
-    # Get method
-    method = os.path.basename(outfile).split('.')[0]
+    # Z-score
+    zscore_dataframe = zscoreDF(similarity_dataframe)
 
-    # Normalize
-    if method == 'fraction':
-        normalized_dataframe = enrichr_dataframe.apply(lambda x: x/max(x), axis=1)
-    elif method == 'raw':
-        normalized_dataframe = enrichr_dataframe
-    elif method == 'zscore':
-        normalized_dataframe = zscoreDF(enrichr_dataframe)
-    elif method == 'zscore_nodiag':
-        enrichr_dataframe = enrichr_dataframe.astype(float)
-        np.fill_diagonal(enrichr_dataframe.values, np.nan)
-        normalized_dataframe = zscoreDF(enrichr_dataframe)
-    elif method == 'random':
-        normalized_dataframe = enrichr_dataframe.T.apply(lambda x: np.random.rand(len(x))).T
-    else:
-        raise ValueError
+    # Write
+    zscore_dataframe.reset_index().to_feather(outfile)
 
-    # Save
-    normalized_dataframe.reset_index().to_feather(outfile)
+#############################################
+########## 3. Normalize Probability
+#############################################
+
+@transform(prepareMatrices,
+           suffix('.feather'),
+           '_prob.feather')
+
+def normalizeProbability(infile, outfile):
+
+    # Skip archs
+    if 'archs' not in infile:
+
+        # Read data
+        similarity_dataframe = pd.read_feather(infile).set_index('gene_symbol')
+
+        # Get diagonal
+        diagonal = np.diag(similarity_dataframe)
+
+        # Divide
+        probability_dataframe = (similarity_dataframe.T/diagonal).T/diagonal
+
+        # Write
+        probability_dataframe.reset_index().to_feather(outfile)
 
 #############################################
 ########## 2. Get average scores
@@ -118,7 +161,7 @@ def normalizeCounts(infile, outfile):
 
 @follows(mkdir('s2-average_scores.dir'), normalizeCounts)
 
-@product(glob.glob('s1-normalized.dir/*.feather'),
+@product('s1-matrices.dir/*.feather',
          formatter(r'.*/(.*).feather'),
          libraries,
          formatter(r'.*/(.*).txt'),
@@ -157,7 +200,7 @@ def getAverageScores(infiles, outfile):
 
 @transform(getAverageScores,
            regex(r'.*/(.*)-(.*).feather'),
-           add_inputs(r'libraries.dir/\2.txt'),
+           add_inputs(r'rawdata.dir/libraries/\2.txt'),
            r's3-auc_scores.dir/\1-\2-library_scores.txt')
 
 def getAucScores(infiles, outfile):
@@ -199,11 +242,11 @@ def getAucScores(infiles, outfile):
 ########## 4. Get AUC scores
 #############################################
 
-@follows(mkdir('s3-auc_scores.dir'))
+@follows(mkdir('s3-auc_scores.dir'), getAucScores)
 
 @transform(getAverageScores,
            regex(r'.*/(.*)-(.*).feather'),
-           add_inputs(r'libraries.dir/\2.txt'),
+           add_inputs(r'rawdata.dir/libraries/\2.txt'),
            r's3-auc_scores.dir/\1-\2-gene_scores.txt')
 
 def getGeneAucScores(infiles, outfile):
@@ -309,6 +352,9 @@ def plotAucScores(infile, outfile):
 ########## Run pipeline
 ##################################################
 ##################################################
+with open('pipeline/pipeline.png', 'wb') as openfile:
+      pipeline_printout_graph(openfile, output_format='png')
+
 if 'plot' in sys.argv[-1]:
     pipeline_run([sys.argv[-1]], multiprocess=1, verbose=1)
 else:
