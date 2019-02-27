@@ -78,7 +78,7 @@ run_limma <- function(expression_file, metadata_file, outfile, comparison) {
     fit <- lmFit(eset, design)
 
     # Make contrasts
-    cmd <- paste("cont.matrix <- makeContrasts(", paste(comparison, collapse='-'), ", levels = design)", sep = '"')
+    cmd <- paste("cont.matrix <- makeContrasts(", paste(rev(comparison), collapse='-'), ", levels = design)", sep = '"')
     eval(parse(text = cmd))
     fit2 <- contrasts.fit(fit, cont.matrix)
     fit2 <- eBayes(fit2)

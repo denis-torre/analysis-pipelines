@@ -48,15 +48,16 @@ r.source('pipeline/scripts/mcgrath.R')
 
 @follows(mkdir('s1-samples.dir'))
 
-@transform('rawdata/*/*.idat',
+@transform('rawdata/7196780027/*.idat',
            regex(r'(.*)/(.*).idat'),
            add_inputs(r'\1/HumanHT-12_V4_0_R2_15002873_B.bgx'),
-           r's1-samples.dir/\2.txt')
+           r's1-expression.dir/\2.txt')
 
 def readIdat(infiles, outfile):
 
     # Read expression
-    r.read_idat(infiles[0], infiles[1], outfile)
+    print(infiles, outfile)
+#     r.read_idat(infiles[0], infiles[1], outfile)
 
 #############################################
 ########## 2. Merge
