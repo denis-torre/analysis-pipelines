@@ -102,7 +102,8 @@ def runStar(infiles, outfile):
 
     # Align
 	print('Doing {}...'.format(outfile))
-	align.align(readFiles, outfile, method='STAR', genome='Homo_sapiens.GRCh38', threads=3)
+	align.align(readFiles, outfile, method='STAR', genome='Homo_sapiens.GRCh38', threads=8)
+
 
 #######################################################
 #######################################################
