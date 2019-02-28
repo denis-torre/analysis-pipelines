@@ -1,7 +1,7 @@
 *.dir
 *.sqlite
 *.pyc
-*-checkpoint.ipynb
+*-checkpoint*.ipynb
 .Rhistory
 rawdata
 *.json
@@ -12,3 +12,8 @@ trash
 archana/pipeline/notebooks/plots
 *PPI.xlsx
 exon.*
+*.icloud
+plots
+old
+biojupies
+presentations
