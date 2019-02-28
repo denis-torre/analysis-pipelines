@@ -12,8 +12,13 @@
 #############################################
 ##### 1. Python modules #####
 from ruffus import *
-import sys, os, json, glob
+import sys
+import os
+import json
+import glob
+import urllib.request
 import pandas as pd
+import numpy as np
 from rpy2.robjects import r, pandas2ri
 pandas2ri.activate()
 
@@ -21,8 +26,12 @@ pandas2ri.activate()
 # Pipeline running
 sys.path.append('/Users/denis/Documents/Projects/scripts')
 sys.path.append('pipeline/scripts')
-import Support3 as S
-import Mamalis as P
+# import Support3 as S
+# import Mamalis as P
+sys.path.append('../../jupyter-notebook/biojupies-plugins/library/analysis_tools/enrichr/')
+import enrichr
+sys.path.append('../../jupyter-notebook/biojupies-plugins/library/core_scripts/shared/')
+import shared
 
 #############################################
 ########## 2. General Setup
@@ -30,6 +39,7 @@ import Mamalis as P
 ##### 1. Variables #####
 counts_file = 'rawdata/counts/counts.txt'
 metadata_file = 'rawdata/metadata/sample_metadata_processed.xlsx'
+metadata_file_txt = 'rawdata/metadata/sample_metadata_processed.txt'
 
 ##### 2. R Connection #####
 r.source('pipeline/scripts/mamalis.R')
@@ -64,7 +74,7 @@ def alignReads(infiles, outfile):
 #############################################
 
 @merge('s1-kallisto.dir/*/run_info.json',
-       's2-expression.dir/run_info.txt')
+       's1-kallisto.dir/run_info.txt')
 
 def mergeInfo(infiles, outfile):
 
@@ -158,19 +168,194 @@ def splitData(infiles, outfiles, outfileRoot):
 
 #######################################################
 #######################################################
-########## S. 
+########## S3. Differential Expression
 #######################################################
 #######################################################
 
 #############################################
-########## . 
+########## 1. RL Treatment
 #############################################
 
+@follows(mkdir('s3-differential_expression.dir'))
+
+@transform(splitData,
+		   regex(r'.*/(.*)-counts.txt'),
+		   add_inputs(metadata_file_txt),
+		   r's3-differential_expression.dir/\1-control_vs_RL-limma.txt')
+
+def limmaRl(infiles, outfile):
+
+	r.limma_rl(np.array(infiles), outfile)
+
+
+#######################################################
+#######################################################
+########## S4. Enrichr
+#######################################################
+#######################################################
+
+#############################################
+########## 1. Enrichr
+#############################################
+
+@follows(mkdir('s4-enrichr.dir'))
+
+@transform(limmaRl,
+           regex(r'.*/(.*)-limma.txt'),
+		   r's4-enrichr.dir/\1-listids.json')
+
+def runEnrichr(infile, outfile):
+
+	# Print
+	print('Doing {}...'.format(outfile))
+	control, perturbation = os.path.basename(infile).split('-')[1].split('_vs_')
+	cell_line = os.path.basename(infile).split('_')[0]
+
+	# Read dataframe
+	limma_dataframe = pd.read_table(infile).set_index('gene_symbol').sort_values('t', ascending=False)
+
+	# Get N
+	n = 500
+
+	# Get genesets
+	listids = {
+		'up': enrichr.submit_enrichr_geneset(limma_dataframe.index[:n].tolist(), 'Genes upregulated in {perturbation} condition (vs {cell_line} {control})'.format(**locals())),
+		'down': enrichr.submit_enrichr_geneset(limma_dataframe.index[-n:].tolist(), 'Genes downregulated in {perturbation} condition (vs {cell_line} {control})'.format(**locals()))
+	}
+
+	# Write
+	with open(outfile, 'w') as openfile:
+		json.dump(listids, openfile, indent=4)
+
+#######################################################
+#######################################################
+########## S5. Enrichment Results
+#######################################################
+#######################################################
+
+#############################################
+########## 1. Get results
+#############################################
+
+@follows(mkdir('s5-enrichment_results.dir'))
+
+@transform(runEnrichr,
+           regex(r'.*/(.*)-listids.json'),
+           r's5-enrichment_results.dir/\1-enrichment.txt')
+
+def getEnrichmentResults(infile, outfile):
+
+	# Read IDs
+	print('Doing {}...'.format(outfile))	
+	with open(infile) as openfile:
+		enrichr_ids = json.load(openfile)
+
+	# Libraries
+	libraries = ['GO_Biological_Process_2018', 'GO_Molecular_Function_2018', 'Reactome_2016', 'KEGG_2016','WikiPathways_2016', 'Human_Phenotype_Ontology', 'MGI_Mammalian_Phenotype_2017']
+
+	# Results
+	results = []
+
+	# Loop
+	for direction in ['up', 'down']:
+
+		# Get results
+		enrichment_results = shared.get_enrichr_results(enrichr_ids[direction]['userListId'], gene_set_libraries={x: x for x in libraries})
+		
+		# Add direction
+		enrichment_results['direction'] = direction
+
+		# Append
+		results.append(enrichment_results)
+		
+	# Concatenate
+	result_dataframe = pd.concat(results)
+
+	# Write
+	result_dataframe.to_csv(outfile, sep='\t', index=False)
+
+#######################################################
+#######################################################
+########## S6. Excel Conversion
+#######################################################
+#######################################################
+
+#############################################
+########## 1. Convert
+#############################################
+
+@follows(mkdir('s6-excel.dir'))
+
+@transform((limmaRl, getEnrichmentResults),
+		   regex(r'.*/(.*).txt'),
+		   r's6-excel.dir/\1.xls')
+
+def convertExcel(infile, outfile):
+	dataframe = pd.read_table(infile)
+	dataframe.to_excel(outfile, index=False)
+
+#######################################################
+#######################################################
+########## S7. ChEA
+#######################################################
+#######################################################
+
+#############################################
+########## 1. Run ChEA
+#############################################
+
+@follows(mkdir('s7-chea.dir'), convertExcel)
+
+@transform(limmaRl,
+           regex(r'.*/(.*)-limma.txt'),
+           r's7-chea.dir/\1-chea.txt')
+
+def runChea(infile, outfile):
+
+	# Print
+	print('Doing {}...'.format(outfile))
+	control, perturbation = os.path.basename(infile).split('-')[1].split('_vs_')
+	cell_line = os.path.basename(infile).split('_')[0]
+
+	# Read dataframe
+	limma_dataframe = pd.read_table(infile).set_index('gene_symbol').sort_values('t', ascending=False)
+
+	# Get N
+	n = 500
+
+	# Get gene sets
+	genesets = {
+		'up': limma_dataframe.index[:n],
+		'down': limma_dataframe.index[-n:]
+	}
+
+	# Define results
+	results = []
+
+	# Loop
+	for key, value in genesets.items():
+
+		# Get URL
+		chea_url = 'https://amp.pharm.mssm.edu/chea3/api/enrich/'+','.join(value)
+
+		# Get results
+		chea_results =json.loads(urllib.request.urlopen(chea_url).read())
+		chea_dataframe = pd.DataFrame(chea_results['Integrated--meanRank']).drop(['Library', 'Query Name'], axis=1)
+		chea_dataframe['direction'] = key
+		
+		# Append
+		results.append(chea_dataframe)
+
+	# Concatenate
+	result_dataframe = pd.concat(results)
+
+	# Write
+	result_dataframe.to_csv(outfile, sep='\t', index=False)
 
 ##################################################
 ##################################################
 ########## Run pipeline
 ##################################################
 ##################################################
-pipeline_run([sys.argv[-1]], multiprocess=4, verbose=1)
+pipeline_run([sys.argv[-1]], multiprocess=1, verbose=1)
 print('Done!')
