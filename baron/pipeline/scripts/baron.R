@@ -27,6 +27,7 @@ run_limma <- function(infile, outfile, comparison) {
 
     # Read counts
     count_dataframe <- read.table(infile, header=TRUE, row.names='gene_symbol')
+    count_dataframe$P3.1 <- NULL
 
     # Get design
     group <- sapply(colnames(count_dataframe), function(x) strsplit(x, '.', fixed=TRUE)[[1]][1])
@@ -46,7 +47,7 @@ run_limma <- function(infile, outfile, comparison) {
     fit <- lmFit(v, design)
 
     # Make contrast matrix
-    cmd <- paste("cont.matrix <- makeContrasts(", paste(comparison, collapse='-'), ", levels = design)", sep = '"')
+    cmd <- paste("cont.matrix <- makeContrasts(", paste(rev(comparison), collapse='-'), ", levels = design)", sep = '"')
     eval(parse(text = cmd))
 
     # Fit
